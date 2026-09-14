@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# 数据库导出脚本（含真实个人信息，不上传）
+sql/*.sql
+
+# 用户上传文件（含用户数据，不上传）
+upload/*
+!upload/.gitkeep
+
+# 本地私密配置（API 密钥等，不上传）
+config/config_local.py
+.env

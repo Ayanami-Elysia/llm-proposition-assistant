@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>考试记录管理 - 后台考试系统</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+    <link rel="stylesheet" href="/static/css/admin.css">
+    <style>
+        .page-container { padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e6e6e6; }
+        .page-header h2 { margin: 0; color: #333; font-size: 24px; font-weight: 600; }
+        .table-card { margin-top: 20px; }
+        .pagination-container { margin-top: 20px; text-align: center; }
+        .answer-item { padding: 15px; border: 1px solid #e6e6e6; margin-bottom: 15px; border-radius: 4px; background: #f9f9f9; }
+        .answer-item.correct { border-color: #67c23a; background: #f0f9ff; }
+        .answer-item.wrong { border-color: #f56c6c; background: #fef0f0; }
+        .answer-item.pending { border-color: #e6a23c; background: #fdf6ec; }
+        .answer-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .answer-content { margin-top: 10px; }
+        .score-display { font-size: 18px; font-weight: bold; color: #409eff; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <admin-layout :active-menu="activeMenu">
+            <template #content>
+                <div class="page-container">
+                    <div class="page-header">
+                        <h2>考试记录管理</h2>
+                    </div>
+
+                    <!-- 搜索筛选 -->
+                    <el-card>
+                        <el-form :inline="true" :model="searchForm" class="search-form">
+                            <el-form-item label="关键词">
+                                <el-input v-model="searchForm.keyword" placeholder="试卷名称/学生姓名" clearable @keyup.enter.native="handleSearch"></el-input>
+                            </el-form-item>
+                            <el-form-item label="状态">
+                                <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width: 160px;">
+                                    <el-option label="全部" value=""></el-option>
+                                    <el-option label="进行中" value="in_progress"></el-option>
+                                    <el-option label="已提交" value="submitted"></el-option>
+                                    <el-option label="已批阅" value="graded"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="批阅状态">
+                                <el-select v-model="searchForm.reviewStatus" placeholder="请选择" clearable style="width: 160px;">
+                                    <el-option label="全部" value=""></el-option>
+                                    <el-option label="待批阅" value="pending"></el-option>
+                                    <el-option label="批阅中" value="reviewing"></el-option>
+                                    <el-option label="已完成" value="completed"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item>
+                                <el-button type="primary" @click="handleSearch"><i class="el-icon-search"></i> 搜索</el-button>
+                                <el-button @click="handleReset"><i class="el-icon-refresh"></i> 重置</el-button>
+                            </el-form-item>
+                        </el-form>
+                    </el-card>
+
+                    <!-- 表格 -->
+                    <el-card class="table-card">
+                        <el-table :data="tableData" v-loading="loading" stripe style="width: 100%">
+                            <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
+                            <el-table-column prop="paperName" label="试卷名称" min-width="180" show-overflow-tooltip></el-table-column>
+                            <el-table-column prop="studentName" label="学生姓名" width="120" align="center"></el-table-column>
+                            <el-table-column prop="startTime" label="开始时间" width="160" align="center"></el-table-column>
+                            <el-table-column prop="submitTime" label="提交时间" width="160" align="center">
+                                <template slot-scope="scope">
+                                    <span v-if="scope.row.submitTime">{{ scope.row.submitTime }}</span>
+                                    <span v-else style="color:#999;">未提交</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="得分" width="120" align="center">
+                                <template slot-scope="scope">
+                                    <span class="score-display">{{ scope.row.obtainedScore }}</span>
+                                    <span style="color:#999;">/ {{ scope.row.totalScore }}</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="status" label="状态" width="100" align="center">
+                                <template slot-scope="scope">
+                                    <el-tag :type="getStatusType(scope.row.status)" size="small">
+                                        {{ getStatusName(scope.row.status) }}
+                                    </el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="reviewStatus" label="批阅状态" width="100" align="center">
+                                <template slot-scope="scope">
+                                    <el-tag :type="getReviewStatusType(scope.row.reviewStatus)" size="small">
+                                        {{ getReviewStatusName(scope.row.reviewStatus) }}
+                                    </el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="reviewerName" label="批阅人" width="100" align="center">
+                                <template slot-scope="scope">
+                                    <span v-if="scope.row.reviewerName">{{ scope.row.reviewerName }}</span>
+                                    <span v-else style="color:#999;">-</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="操作" align="center" fixed="right" width="280">
+                                <template slot-scope="scope">
+                                    <el-button size="mini" type="primary" @click="handleReview(scope.row)">批阅</el-button>
+                                    <el-button size="mini" type="info" @click="handleViewDetail(scope.row)">详情</el-button>
+                                    <el-button size="mini" type="danger" @click="handleDelete(scope.row)">删除</el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                        <div class="pagination-container">
+                            <el-pagination
+                                @size-change="handleSizeChange"
+                                @current-change="handleCurrentChange"
+                                :current-page="pagination.pageNum"
+                                :page-sizes="[10, 20, 50, 100]"
+                                :page-size="pagination.pageSize"
+                                layout="total, sizes, prev, pager, next, jumper"
+                                :total="pagination.total">
+                            </el-pagination>
+                        </div>
+                    </el-card>
+                </div>
+
+                <!-- 批阅对话框 -->
+                <el-dialog title="批阅试卷" :visible.sync="reviewDialogVisible" width="80%" :close-on-click-modal="false">
+                    <div v-if="currentExamRecord" style="margin-bottom: 20px;">
+                        <el-alert :title="`试卷：${currentExamRecord.paperName} | 学生：${currentExamRecord.studentName} | 得分：${currentExamRecord.obtainedScore}/${currentExamRecord.totalScore}`" type="info" :closable="false"></el-alert>
+                    </div>
+                    <div v-loading="answersLoading">
+                        <div v-for="(answer, index) in answerRecords" :key="answer.id" 
+                             :class="['answer-item', getAnswerItemClass(answer)]">
+                            <div class="answer-header">
+                                <div>
+                                    <el-tag size="small" style="margin-right: 10px;">第{{ index + 1 }}题</el-tag>
+                                    <el-tag :type="getQuestionTypeTag(answer.questionType)" size="small">
+                                        {{ getQuestionTypeName(answer.questionType) }}
+                                    </el-tag>
+                                    <span style="margin-left: 10px; color:#666;">分值：{{ answer.score }}分</span>
+                                </div>
+                                <div>
+                                    <span v-if="answer.isCorrect === 1" style="color:#67c23a; font-weight:bold;">✓ 正确</span>
+                                    <span v-else-if="answer.isCorrect === 0" style="color:#f56c6c; font-weight:bold;">✗ 错误</span>
+                                    <span v-else style="color:#e6a23c; font-weight:bold;">待批阅</span>
+                                    <span style="margin-left: 10px; color:#409eff; font-weight:bold;">
+                                        得分：{{ answer.obtainedScore }}分
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="answer-content">
+                                <div style="margin-bottom: 10px;">
+                                    <strong>题目：</strong>
+                                    <div v-html="answer.content" style="margin-top: 5px;"></div>
+                                    <div v-if="answer.imageUrl" style="margin-top: 10px;">
+                                        <img :src="answer.imageUrl" style="max-width: 300px; border-radius: 4px;" />
+                                    </div>
+                                </div>
+                                <div v-if="answer.optionA || answer.optionB" style="margin-bottom: 10px;">
+                                    <strong>选项：</strong>
+                                    <div style="margin-top: 5px;">
+                                        <div v-if="answer.optionA">A. {{ answer.optionA }}</div>
+                                        <div v-if="answer.optionB">B. {{ answer.optionB }}</div>
+                                        <div v-if="answer.optionC">C. {{ answer.optionC }}</div>
+                                        <div v-if="answer.optionD">D. {{ answer.optionD }}</div>
+                                    </div>
+                                </div>
+                                <div style="margin-bottom: 10px;">
+                                    <strong>正确答案：</strong>
+                                    <el-tag type="success" size="small" style="margin-left: 5px;">{{ answer.correctAnswer }}</el-tag>
+                                </div>
+                                <div style="margin-bottom: 10px;">
+                                    <strong>学生答案：</strong>
+                                    <el-tag :type="answer.isCorrect === 1 ? 'success' : (answer.isCorrect === 0 ? 'danger' : 'info')" 
+                                            size="small" style="margin-left: 5px;">
+                                        {{ answer.studentAnswer || '未作答' }}
+                                    </el-tag>
+                                </div>
+                                <div v-if="['fill_blank', 'essay'].includes(answer.questionType)" style="margin-top: 15px;">
+                                    <el-form :inline="true">
+                                        <el-form-item label="老师评分">
+                                            <el-input-number v-model="answer.teacherScore" :min="0" :max="parseFloat(answer.score || 0)" 
+                                                           :precision="1" size="small" style="width: 120px;"></el-input-number>
+                                            <span style="margin-left: 5px; color:#999;">/ {{ answer.score }}分</span>
+                                        </el-form-item>
+                                        <el-form-item>
+                                            <el-button size="small" type="primary" @click="handleSaveAnswerScore(answer)">保存评分</el-button>
+                                        </el-form-item>
+                                    </el-form>
+                                    <el-form-item label="老师评语" style="width: 100%; margin-top: 10px;">
+                                        <el-input v-model="answer.teacherRemark" type="textarea" :rows="2" 
+                                                 placeholder="请输入评语" style="width: 100%;"></el-input>
+                                        <el-button size="small" type="primary" @click="handleSaveAnswerRemark(answer)" 
+                                                  style="margin-top: 5px;">保存评语</el-button>
+                                    </el-form-item>
+                                </div>
+                                <div v-if="answer.analysis" style="margin-top: 10px; padding: 10px; background: #fff; border-radius: 4px;">
+                                    <strong>解析：</strong>
+                                    <div v-html="answer.analysis"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div slot="footer" class="dialog-footer">
+                        <el-button @click="reviewDialogVisible = false">关闭</el-button>
+                        <el-button type="primary" @click="handleCompleteReview" :loading="reviewLoading">完成批阅</el-button>
+                    </div>
+                </el-dialog>
+
+                <!-- 详情对话框 -->
+                <el-dialog title="考试记录详情" :visible.sync="detailDialogVisible" width="60%" :close-on-click-modal="false">
+                    <div v-if="currentExamRecord" class="detail-content">
+                        <el-descriptions :column="2" border>
+                            <el-descriptions-item label="试卷名称">{{ currentExamRecord.paperName }}</el-descriptions-item>
+                            <el-descriptions-item label="学生姓名">{{ currentExamRecord.studentName }}</el-descriptions-item>
+                            <el-descriptions-item label="开始时间">{{ currentExamRecord.startTime }}</el-descriptions-item>
+                            <el-descriptions-item label="结束时间">{{ currentExamRecord.endTime || '-' }}</el-descriptions-item>
+                            <el-descriptions-item label="提交时间">{{ currentExamRecord.submitTime || '未提交' }}</el-descriptions-item>
+                            <el-descriptions-item label="试卷总分">{{ currentExamRecord.totalScore }}分</el-descriptions-item>
+                            <el-descriptions-item label="获得分数">{{ currentExamRecord.obtainedScore }}分</el-descriptions-item>
+                            <el-descriptions-item label="状态">
+                                <el-tag :type="getStatusType(currentExamRecord.status)" size="small">
+                                    {{ getStatusName(currentExamRecord.status) }}
+                                </el-tag>
+                            </el-descriptions-item>
+                            <el-descriptions-item label="批阅状态">
+                                <el-tag :type="getReviewStatusType(currentExamRecord.reviewStatus)" size="small">
+                                    {{ getReviewStatusName(currentExamRecord.reviewStatus) }}
+                                </el-tag>
+                            </el-descriptions-item>
+                            <el-descriptions-item label="批阅人">{{ currentExamRecord.reviewerName || '-' }}</el-descriptions-item>
+                            <el-descriptions-item label="批阅时间">{{ currentExamRecord.reviewTime || '-' }}</el-descriptions-item>
+                            <el-descriptions-item label="批阅备注" :span="2">
+                                <div style="white-space: pre-wrap;">{{ currentExamRecord.reviewRemark || '-' }}</div>
+                            </el-descriptions-item>
+                        </el-descriptions>
+                    </div>
+                    <div slot="footer" class="dialog-footer">
+                        <el-button @click="detailDialogVisible = false">关闭</el-button>
+                    </div>
+                </el-dialog>
+            </template>
+        </admin-layout>
+    </div>
+
+    <script src="/static/js/vue.js"></script>
+    <script src="/static/js/element-ui.min.js"></script>
+    <script src="/static/js/axios.min.js"></script>
+    <script src="/static/js/config/layout-config.js"></script>
+    <script src="/static/js/components/layout.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    activeMenu: 'exam_record',
+                    loading: false,
+                    answersLoading: false,
+                    reviewLoading: false,
+                    tableData: [],
+                    answerRecords: [],
+                    currentExamRecord: null,
+                    reviewDialogVisible: false,
+                    detailDialogVisible: false,
+                    searchForm: {
+                        keyword: '',
+                        status: '',
+                        reviewStatus: ''
+                    },
+                    pagination: {
+                        pageNum: 1,
+                        pageSize: 10,
+                        total: 0
+                    }
+                }
+            },
+            mounted() {
+                this.loadData();
+            },
+            methods: {
+                loadData() {
+                    this.loading = true;
+                    const params = {
+                        pageNum: this.pagination.pageNum,
+                        pageSize: this.pagination.pageSize,
+                        keyword: this.searchForm.keyword,
+                        status: this.searchForm.status,
+                        reviewStatus: this.searchForm.reviewStatus
+                    };
+                    axios.get('/api/exam_record/admin/list', { params })
+                        .then(res => {
+                            if (res.data.code === 200) {
+                                this.tableData = res.data.data.rows;
+                                this.pagination.total = res.data.data.total;
+                            } else {
+                                this.$message.error(res.data.message || '加载失败');
+                            }
+                        })
+                        .catch(() => this.$message.error('加载失败'))
+                        .finally(() => this.loading = false);
+                },
+                handleSearch() {
+                    this.pagination.pageNum = 1;
+                    this.loadData();
+                },
+                handleReset() {
+                    this.searchForm = { keyword: '', status: '', reviewStatus: '' };
+                    this.pagination.pageNum = 1;
+                    this.loadData();
+                },
+                handleSizeChange(val) {
+                    this.pagination.pageSize = val;
+                    this.pagination.pageNum = 1;
+                    this.loadData();
+                },
+                handleCurrentChange(val) {
+                    this.pagination.pageNum = val;
+                    this.loadData();
+                },
+                handleReview(row) {
+                    this.currentExamRecord = { ...row };
+                    this.loadAnswerRecords(row.id);
+                    this.reviewDialogVisible = true;
+                },
+                loadAnswerRecords(examRecordId) {
+                    this.answersLoading = true;
+                    axios.get('/api/exam_record/admin/answers', { params: { examRecordId } })
+                        .then(res => {
+                            if (res.data.code === 200) {
+                                this.answerRecords = (res.data.data || []).map(item => ({
+                                    ...item,
+                                    teacherScore: item.teacherScore ? parseFloat(item.teacherScore) : null,
+                                    teacherRemark: item.teacherRemark || ''
+                                }));
+                            } else {
+                                this.$message.error(res.data.message || '加载答题记录失败');
+                            }
+                        })
+                        .catch(() => this.$message.error('加载答题记录失败'))
+                        .finally(() => this.answersLoading = false);
+                },
+                handleSaveAnswerScore(answer) {
+                    if (answer.teacherScore === null || answer.teacherScore === undefined) {
+                        this.$message.warning('请输入评分');
+                        return;
+                    }
+                    axios.post('/api/exam_record/admin/review-answer', {
+                        answerRecordId: answer.id,
+                        teacherScore: answer.teacherScore.toString()
+                    })
+                    .then(res => {
+                        if (res.data.code === 200) {
+                            this.$message.success('评分保存成功');
+                            answer.obtainedScore = answer.teacherScore.toString();
+                            // 更新考试记录总分
+                            this.loadAnswerRecords(answer.examRecordId);
+                            this.loadData();
+                        } else {
+                            this.$message.error(res.data.message || '保存失败');
+                        }
+                    })
+                    .catch(() => this.$message.error('保存失败'));
+                },
+                handleSaveAnswerRemark(answer) {
+                    axios.post('/api/exam_record/admin/review-answer', {
+                        answerRecordId: answer.id,
+                        teacherRemark: answer.teacherRemark
+                    })
+                    .then(res => {
+                        if (res.data.code === 200) {
+                            this.$message.success('评语保存成功');
+                        } else {
+                            this.$message.error(res.data.message || '保存失败');
+                        }
+                    })
+                    .catch(() => this.$message.error('保存失败'));
+                },
+                handleCompleteReview() {
+                    this.$confirm('确定完成批阅吗？', '提示', { type: 'warning' })
+                        .then(() => {
+                            this.reviewLoading = true;
+                            axios.post('/api/exam_record/admin/review-exam', {
+                                examRecordId: this.currentExamRecord.id,
+                                reviewRemark: ''
+                            })
+                            .then(res => {
+                                if (res.data.code === 200) {
+                                    this.$message.success('批阅完成');
+                                    this.reviewDialogVisible = false;
+                                    this.loadData();
+                                } else {
+                                    this.$message.error(res.data.message || '批阅失败');
+                                }
+                            })
+                            .catch(() => this.$message.error('批阅失败'))
+                            .finally(() => this.reviewLoading = false);
+                        });
+                },
+                handleViewDetail(row) {
+                    axios.get('/api/exam_record/admin/detail', { params: { id: row.id } })
+                        .then(res => {
+                            if (res.data.code === 200) {
+                                this.currentExamRecord = res.data.data;
+                                this.detailDialogVisible = true;
+                            } else {
+                                this.$message.error(res.data.message || '获取详情失败');
+                            }
+                        })
+                        .catch(() => this.$message.error('获取详情失败'));
+                },
+                handleDelete(row) {
+                    this.$confirm('确定要删除该考试记录吗？删除后不可恢复！', '警告', { type: 'error' })
+                        .then(() => {
+                            axios.get('/api/exam_record/admin/delete', { params: { id: row.id } })
+                                .then(res => {
+                                    if (res.data.code === 200) {
+                                        this.$message.success(res.data.message);
+                                        this.loadData();
+                                    } else {
+                                        this.$message.error(res.data.message || '删除失败');
+                                    }
+                                })
+                                .catch(() => this.$message.error('删除失败'));
+                        });
+                },
+                getStatusName(status) {
+                    const map = {
+                        'in_progress': '进行中',
+                        'submitted': '已提交',
+                        'graded': '已批阅'
+                    };
+                    return map[status] || status;
+                },
+                getStatusType(status) {
+                    const map = {
+                        'in_progress': 'warning',
+                        'submitted': 'info',
+                        'graded': 'success'
+                    };
+                    return map[status] || '';
+                },
+                getReviewStatusName(status) {
+                    const map = {
+                        'pending': '待批阅',
+                        'reviewing': '批阅中',
+                        'completed': '已完成'
+                    };
+                    return map[status] || status;
+                },
+                getReviewStatusType(status) {
+                    const map = {
+                        'pending': 'warning',
+                        'reviewing': 'info',
+                        'completed': 'success'
+                    };
+                    return map[status] || '';
+                },
+                getQuestionTypeName(type) {
+                    const map = {
+                        'single_choice': '单选题',
+                        'multiple_choice': '多选题',
+                        'fill_blank': '填空题',
+                        'essay': '解答题',
+                        'judge': '判断题'
+                    };
+                    return map[type] || type;
+                },
+                getQuestionTypeTag(type) {
+                    const map = {
+                        'single_choice': 'primary',
+                        'multiple_choice': 'success',
+                        'fill_blank': 'info',
+                        'essay': 'warning',
+                        'judge': 'danger'
+                    };
+                    return map[type] || '';
+                },
+                getAnswerItemClass(answer) {
+                    if (answer.isCorrect === 1) return 'correct';
+                    if (answer.isCorrect === 0) return 'wrong';
+                    return 'pending';
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+

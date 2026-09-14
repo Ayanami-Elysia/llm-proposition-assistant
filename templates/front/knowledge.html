@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库 - 考试系统</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+    <link rel="stylesheet" href="/static/css/front.css">
+</head>
+<body>
+    <div id="app">
+        <front-layout :active-menu="activeMenu"> 
+                <div class="page-container">
+                    <!-- 搜索和筛选区域 -->
+                    <el-card class="search-card">
+                        <el-form :inline="true" :model="searchForm" class="search-form">
+                            <el-form-item label="关键词">
+                                <el-input 
+                                    v-model="searchForm.keyword" 
+                                    placeholder="请输入知识标题、摘要或知识点"
+                                    clearable
+                                    @keyup.enter.native="handleSearch">
+                                </el-input>
+                            </el-form-item>
+                            <el-form-item label="学科" style="width: 300px;">
+                                <el-select v-model="searchForm.subject" placeholder="请选择" clearable style="width: 160px;">
+                                    <el-option label="全部" value=""></el-option>
+                                    <el-option label="数学" value="数学"></el-option>
+                                    <el-option label="语文" value="语文"></el-option>
+                                    <el-option label="英语" value="英语"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="年级" v-show="false">
+                                <el-select v-model="searchForm.grade" placeholder="请选择" clearable style="width: 160px;">
+                                    <el-option label="全部" value=""></el-option>
+                                    <el-option label="一年级" value="一年级"></el-option>
+                                    <el-option label="二年级" value="二年级"></el-option>
+                                    <el-option label="三年级" value="三年级"></el-option>
+                                    <el-option label="四年级" value="四年级"></el-option>
+                                    <el-option label="五年级" value="五年级"></el-option>
+                                    <el-option label="六年级" value="六年级"></el-option>
+                                    <el-option label="七年级" value="七年级"></el-option>
+                                    <el-option label="八年级" value="八年级"></el-option>
+                                    <el-option label="九年级" value="九年级"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item>
+                                <el-button type="primary" @click="handleSearch" :loading="loading">
+                                    <i class="el-icon-search"></i> 搜索
+                                </el-button>
+                                <el-button @click="handleReset">
+                                    <i class="el-icon-refresh"></i> 重置
+                                </el-button>
+                            </el-form-item>
+                        </el-form>
+                    </el-card>
+
+                    <!-- 知识库列表 -->
+                    <el-card class="paper-list-card">
+                        <div slot="header" class="card-header">
+                            <span>知识库</span>
+                            <el-button type="text" @click="loadKnowledges" :loading="loading">
+                                <i class="el-icon-refresh"></i> 刷新
+                            </el-button>
+                        </div>
+
+                        <!-- 加载状态 -->
+                        <div v-loading="loading" class="paper-list">
+                            <!-- 空状态 -->
+                            <div v-if="!loading && knowledges.length === 0" class="empty-state">
+                                <i class="el-icon-document"></i>
+                                <p>暂无知识库信息</p>
+                                <el-button type="primary" @click="loadKnowledges">重新加载</el-button>
+                            </div>
+
+                            <!-- 知识库列表 -->
+                            <div v-else>
+                                <div 
+                                    v-for="(knowledge, index) in knowledges" 
+                                    :key="knowledge.id"
+                                    class="paper-item"
+                                    @click="viewKnowledge(knowledge)">
+                                    <div class="paper-content">
+                                        <div class="paper-header">
+                                            <h4 class="paper-title">{{ knowledge.title }}</h4>
+                                            <div class="paper-meta">
+                                                <span class="time">
+                                                    <i class="el-icon-time"></i>
+                                                    {{ knowledge.createTime }}
+                                                </span>
+                                                <span class="author">
+                                                    <i class="el-icon-user"></i>
+                                                    {{ knowledge.author || '系统' }}
+                                                </span>
+                                                <span class="view-count">
+                                                    <i class="el-icon-view"></i>
+                                                    {{ knowledge.viewCount || 0 }}次
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div class="paper-info">
+                                            <el-tag v-if="knowledge.subject" type="info" size="small">
+                                                <i class="el-icon-collection-tag"></i> {{ knowledge.subject }}
+                                            </el-tag>
+                                            <el-tag v-if="knowledge.grade" type="success" size="small" style="margin-left: 10px;">
+                                                <i class="el-icon-school"></i> {{ knowledge.grade }}
+                                            </el-tag>
+                                        </div>
+                                        <div class="paper-description" v-if="knowledge.summary">
+                                            {{ knowledge.summary }}
+                                        </div>
+                                        <div class="knowledge-points" v-if="knowledge.knowledgePoint && knowledge.knowledgePoint.length > 0">
+                                            <i class="el-icon-star-on"></i>
+                                            <span style="margin-right: 10px;">知识点：</span>
+                                            <el-tag 
+                                                v-for="(point, idx) in knowledge.knowledgePoint" 
+                                                :key="idx"
+                                                size="mini"
+                                                type="warning"
+                                                style="margin-right: 5px; margin-bottom: 5px;">
+                                                {{ point }}
+                                            </el-tag>
+                                        </div>
+                                        <div class="paper-attachments" v-if="knowledge.attachmentUrl && knowledge.attachmentUrl.length > 0">
+                                            <i class="el-icon-paperclip"></i>
+                                            <span>附件：{{ knowledge.attachmentUrl.length }} 个</span>
+                                        </div>
+                                    </div>
+                                    <div class="paper-actions">
+                                        <i class="el-icon-arrow-right"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 分页 -->
+                        <div v-if="total > 0" class="pagination-container">
+                            <el-pagination
+                                @size-change="handleSizeChange"
+                                @current-change="handleCurrentChange"
+                                :current-page="pagination.page"
+                                :page-sizes="[10, 20, 50, 100]"
+                                :page-size="pagination.limit"
+                                layout="total, sizes, prev, pager, next, jumper"
+                                :total="total">
+                            </el-pagination>
+                        </div>
+                    </el-card>
+                </div> 
+        </front-layout>
+        
+        <!-- 知识库详情对话框 -->
+        <el-dialog
+            title="知识库详情"
+            :visible.sync="detailDialogVisible"
+            width="70%"
+            :before-close="handleCloseDetail"
+            custom-class="knowledge-detail-dialog">
+            <div v-if="currentKnowledge" class="knowledge-detail-content">
+                <div class="knowledge-detail-header">
+                    <h2 class="knowledge-detail-title">{{ currentKnowledge.title }}</h2>
+                    <div class="knowledge-detail-meta">
+                        <div class="meta-item">
+                            <i class="el-icon-user"></i>
+                            <span>创建人：{{ currentKnowledge.author || '系统' }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <i class="el-icon-time"></i>
+                            <span>创建时间：{{ currentKnowledge.createTime }}</span>
+                        </div>
+                        <div class="meta-item">
+                            <i class="el-icon-view"></i>
+                            <span>浏览次数：{{ currentKnowledge.viewCount || 0 }}</span>
+                        </div>
+                    </div>
+                </div>
+                <el-divider></el-divider>
+                <div class="knowledge-detail-body">
+                    <div class="detail-item" v-if="currentKnowledge.subject || currentKnowledge.grade">
+                        <div class="detail-label">
+                            <i class="el-icon-collection-tag"></i> 分类信息
+                        </div>
+                        <div class="detail-value">
+                            <el-tag v-if="currentKnowledge.subject" type="info" style="margin-right: 10px;">
+                                {{ currentKnowledge.subject }}
+                            </el-tag>
+                            <el-tag v-if="currentKnowledge.grade" type="success">
+                                {{ currentKnowledge.grade }}
+                            </el-tag>
+                        </div>
+                    </div>
+                    <div class="detail-item" v-if="currentKnowledge.knowledgePoint && currentKnowledge.knowledgePoint.length > 0">
+                        <div class="detail-label">
+                            <i class="el-icon-star-on"></i> 知识点
+                        </div>
+                        <div class="detail-value">
+                            <el-tag 
+                                v-for="(point, idx) in currentKnowledge.knowledgePoint" 
+                                :key="idx"
+                                type="warning"
+                                style="margin-right: 10px; margin-bottom: 5px;">
+                                {{ point }}
+                            </el-tag>
+                        </div>
+                    </div>
+                    <div class="detail-item" v-if="currentKnowledge.summary">
+                        <div class="detail-label">
+                            <i class="el-icon-document"></i> 摘要
+                        </div>
+                        <div class="detail-value description-text">{{ currentKnowledge.summary }}</div>
+                    </div>
+                    <div class="detail-item" v-if="currentKnowledge.content">
+                        <div class="detail-label">
+                            <i class="el-icon-edit-outline"></i> 详细内容
+                        </div>
+                        <div class="detail-value content-text" v-html="currentKnowledge.content"></div>
+                    </div>
+                    <div class="detail-item" v-if="currentKnowledge.attachmentUrl && currentKnowledge.attachmentUrl.length > 0">
+                        <div class="detail-label">
+                            <i class="el-icon-paperclip"></i> 附件
+                        </div>
+                        <div class="detail-value">
+                            <div v-for="(attachment, idx) in currentKnowledge.attachmentUrl" :key="idx" style="margin-bottom: 10px;">
+                                <el-link :href="attachment" target="_blank" type="primary">
+                                    <i class="el-icon-document"></i> 附件{{ idx + 1 }}
+                                </el-link>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div slot="footer" class="dialog-footer">
+                <el-button @click="detailDialogVisible = false">关闭</el-button>
+            </div>
+        </el-dialog>
+    </div>
+
+    <script src="/static/js/vue.js"></script>
+    <script src="/static/js/element-ui.min.js"></script>
+    <script src="/static/js/axios.min.js"></script>
+    <script src="/static/js/config/layout-config.js"></script>
+    <script src="/static/js/config/theme-config.js"></script>
+    <script src="/static/js/components/layout.js"></script> 
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    activeMenu: '6',
+                    loading: false,
+                    knowledges: [],
+                    total: 0,
+                    searchForm: {
+                        keyword: '',
+                        subject: '',
+                        grade: ''
+                    },
+                    pagination: {
+                        page: 1,
+                        limit: 10
+                    },
+                    detailDialogVisible: false,
+                    currentKnowledge: null
+                }
+            },
+            mounted() {
+                this.loadKnowledges();
+            },
+            methods: {
+                // 加载知识库列表
+                loadKnowledges() {
+                    this.loading = true;
+                    
+                    const params = {
+                        page: this.pagination.page,
+                        limit: this.pagination.limit
+                    };
+
+                    // 添加搜索条件
+                    if (this.searchForm.keyword) {
+                        params.keyword = this.searchForm.keyword;
+                    }
+                    if (this.searchForm.subject) {
+                        params.subject = this.searchForm.subject;
+                    }
+                    if (this.searchForm.grade) {
+                        params.grade = this.searchForm.grade;
+                    }
+
+                    axios.get('/api/knowledge/front/list', { params })
+                        .then(response => {
+                            if (response.data.code === 200) {
+                                this.knowledges = response.data.data.rows || [];
+                                this.total = response.data.data.total || 0;
+                            } else {
+                                this.$message.error(response.data.message);
+                                this.knowledges = [];
+                                this.total = 0;
+                            }
+                        })
+                        .catch(error => {
+                            console.error('加载知识库失败:', error);
+                            this.$message.error('加载知识库失败');
+                            this.knowledges = [];
+                            this.total = 0;
+                        })
+                        .finally(() => {
+                            this.loading = false;
+                        });
+                },
+
+                // 搜索
+                handleSearch() {
+                    this.pagination.page = 1;
+                    this.loadKnowledges();
+                },
+
+                // 重置搜索
+                handleReset() {
+                    this.searchForm = {
+                        keyword: '',
+                        subject: '',
+                        grade: ''
+                    };
+                    this.pagination.page = 1;
+                    this.loadKnowledges();
+                },
+
+                // 查看知识库详情
+                async viewKnowledge(knowledge) {
+                    try {
+                        // 调用后端接口获取知识库详情
+                        const response = await axios.get('/api/knowledge/front/detail', {
+                            params: { id: knowledge.id }
+                        });
+                        
+                        if (response.data.code === 200) {
+                            const detailData = response.data.data;
+                            this.currentKnowledge = detailData;
+                            this.detailDialogVisible = true;
+                            // 刷新列表以更新浏览次数
+                            this.loadKnowledges();
+                        } else {
+                            this.$message.error(response.data.message || '获取知识库详情失败');
+                        }
+                    } catch (error) {
+                        console.error('获取知识库详情失败:', error);
+                        this.$message.error('获取知识库详情失败');
+                    }
+                },
+
+                // 关闭详情对话框
+                handleCloseDetail() {
+                    this.detailDialogVisible = false;
+                    this.currentKnowledge = null;
+                },
+
+                // 分页大小改变
+                handleSizeChange(val) {
+                    this.pagination.limit = val;
+                    this.pagination.page = 1;
+                    this.loadKnowledges();
+                },
+
+                // 当前页改变
+                handleCurrentChange(val) {
+                    this.pagination.page = val;
+                    this.loadKnowledges();
+                }
+            }
+        });
+    </script>
+
+    <style scoped>
+        .page-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .search-card {
+            margin-bottom: 20px;
+        }
+
+        .search-form {
+            margin: 0;
+        }
+
+        .paper-list-card {
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .paper-list {
+            min-height: 200px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #64748b;
+        }
+
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 20px;
+            color: #cbd5e1;
+        }
+
+        .empty-state p {
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+
+        .paper-item {
+            display: flex;
+            align-items: flex-start;
+            padding: 20px;
+            border-bottom: 1px solid #e2e8f0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .paper-item:hover {
+            background-color: #f8fafc;
+            transform: translateX(5px);
+        }
+
+        .paper-item:last-child {
+            border-bottom: none;
+        }
+
+        .paper-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .paper-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .paper-title {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: #1e293b;
+            line-height: 1.4;
+            flex: 1;
+        }
+
+        .paper-meta {
+            display: flex;
+            gap: 20px;
+            font-size: 14px;
+            color: #64748b;
+            margin-left: 20px;
+        }
+
+        .paper-meta i {
+            margin-right: 4px;
+        }
+
+        .paper-info {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .paper-description {
+            color: #64748b;
+            line-height: 1.6;
+            margin-bottom: 10px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .knowledge-points {
+            color: #64748b;
+            font-size: 14px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .paper-attachments {
+            color: #64748b;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .paper-actions {
+            margin-left: 20px;
+            color: #94a3b8;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .pagination-container {
+            display: flex;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        /* 知识库详情对话框样式 */
+        .knowledge-detail-dialog .el-dialog {
+            max-width: 1000px;
+            margin: 5vh auto;
+        }
+
+        .knowledge-detail-dialog .el-dialog__body {
+            max-height: 70vh;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .knowledge-detail-content {
+            line-height: 1.6;
+        }
+
+        .knowledge-detail-header {
+            margin-bottom: 20px;
+        }
+
+        .knowledge-detail-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #1e293b;
+            margin: 0 0 15px 0;
+            line-height: 1.4;
+        }
+
+        .knowledge-detail-meta {
+            display: flex;
+            gap: 20px;
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        .knowledge-detail-meta .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .knowledge-detail-body {
+            margin-top: 20px;
+        }
+
+        .detail-item {
+            margin-bottom: 20px;
+        }
+
+        .detail-label {
+            font-size: 14px;
+            color: #64748b;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .detail-value {
+            font-size: 16px;
+            color: #1e293b;
+            font-weight: 500;
+        }
+
+        .description-text {
+            line-height: 1.8;
+            color: #334155;
+            white-space: pre-wrap;
+        }
+
+        .content-text {
+            line-height: 1.8;
+            color: #334155;
+            padding: 15px;
+            background: #f8fafc;
+            border-radius: 4px;
+        }
+
+        @media (max-width: 768px) {
+            .page-container {
+                padding: 10px;
+            }
+
+            .paper-item {
+                flex-direction: column;
+            }
+
+            .paper-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .paper-meta {
+                margin-top: 8px;
+                gap: 15px;
+            }
+        }
+    </style>
+</body>
+</html>
+

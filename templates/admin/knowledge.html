@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库管理 - 后台考试系统</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+    <link rel="stylesheet" href="/static/css/admin.css">
+    <style>
+        .page-container { padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e6e6e6; }
+        .page-header h2 { margin: 0; color: #333; font-size: 24px; font-weight: 600; }
+        .table-card { margin-top: 20px; }
+        .pagination-container { margin-top: 20px; text-align: center; }
+        .form-tip { margin-left: 10px; color: #999; font-size: 12px; }
+        .knowledge-tags { margin-top: 5px; }
+        .attachment-list { margin-top: 5px; }
+        .attachment-item { display: inline-block; margin-right: 10px; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <admin-layout :active-menu="activeMenu">
+            <template #content>
+                <div class="page-container">
+                    <div class="page-header">
+                        <h2>知识库管理</h2>
+                        <div class="page-actions">
+                            <el-button type="primary" @click="showCreateDialog">
+                                <i class="el-icon-plus"></i> 新增知识
+                            </el-button>
+                        </div>
+                    </div>
+
+                    <!-- 搜索筛选 -->
+                    <el-card>
+                        <el-form :inline="true" :model="searchForm" class="search-form">
+                            <el-form-item label="关键词">
+                                <el-input v-model="searchForm.keyword" placeholder="标题/摘要/知识点" clearable @keyup.enter.native="handleSearch"></el-input>
+                            </el-form-item>
+                            <el-form-item label="学科">
+                                <el-select v-model="searchForm.subject" placeholder="请选择" clearable style="width: 160px;">
+                                    <el-option label="全部" value=""></el-option>
+                                    <el-option label="数学" value="数学"></el-option>
+                                    <el-option label="语文" value="语文"></el-option>
+                                    <el-option label="英语" value="英语"></el-option>
+                                    <el-option label="物理" value="物理"></el-option>
+                                    <el-option label="化学" value="化学"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="年级">
+                                <el-select v-model="searchForm.grade" placeholder="请选择" clearable style="width: 160px;">
+                                    <el-option label="全部" value=""></el-option>
+                                    <el-option label="一年级" value="一年级"></el-option>
+                                    <el-option label="二年级" value="二年级"></el-option>
+                                    <el-option label="三年级" value="三年级"></el-option>
+                                    <el-option label="四年级" value="四年级"></el-option>
+                                    <el-option label="五年级" value="五年级"></el-option>
+                                    <el-option label="六年级" value="六年级"></el-option>
+                                    <el-option label="七年级" value="七年级"></el-option>
+                                    <el-option label="八年级" value="八年级"></el-option>
+                                    <el-option label="九年级" value="九年级"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="状态">
+                                <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width: 160px;">
+                                    <el-option label="全部" value=""></el-option>
+                                    <el-option label="启用" value="enabled"></el-option>
+                                    <el-option label="禁用" value="disabled"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item>
+                                <el-button type="primary" @click="handleSearch"><i class="el-icon-search"></i> 搜索</el-button>
+                                <el-button @click="handleReset"><i class="el-icon-refresh"></i> 重置</el-button>
+                            </el-form-item>
+                        </el-form>
+                    </el-card>
+
+                    <!-- 表格 -->
+                    <el-card class="table-card">
+                        <el-table :data="tableData" v-loading="loading" stripe style="width: 100%">
+                            <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
+                            <el-table-column prop="title" label="标题" min-width="180" show-overflow-tooltip></el-table-column>
+                            <el-table-column prop="summary" label="摘要" min-width="200" show-overflow-tooltip></el-table-column>
+                            <el-table-column label="知识点" min-width="150">
+                                <template slot-scope="scope">
+                                    <div class="knowledge-tags">
+                                        <el-tag v-for="(point, index) in (scope.row.knowledgePoint || [])" :key="index" size="small" style="margin-right: 5px;">
+                                            {{ point }}
+                                        </el-tag>
+                                    </div>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="subject" label="学科" width="100" align="center"></el-table-column>
+                            <el-table-column prop="grade" label="年级" width="100" align="center"></el-table-column>
+                            <el-table-column prop="author" label="创建人" width="100" align="center"></el-table-column>
+                            <el-table-column prop="viewCount" label="浏览次数" width="100" align="center"></el-table-column>
+                            <el-table-column prop="status" label="状态" width="100" align="center">
+                                <template slot-scope="scope">
+                                    <el-tag :type="scope.row.status === 'enabled' ? 'success' : 'info'" size="small">
+                                        {{ scope.row.status === 'enabled' ? '启用' : '禁用' }}
+                                    </el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="操作" align="center" fixed="right" width="320">
+                                <template slot-scope="scope">
+                                    <el-button size="mini" type="primary" @click="handleEdit(scope.row)">编辑</el-button>
+                                    <el-button size="mini" type="success" @click="handleViewRelations(scope.row)">关联</el-button>
+                                    <el-button size="mini" type="danger" @click="handleDelete(scope.row)">删除</el-button>
+                                    <el-button size="mini" @click="handleToggleStatus(scope.row)">
+                                        {{ scope.row.status === 'enabled' ? '禁用' : '启用' }}
+                                    </el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                        <div class="pagination-container">
+                            <el-pagination
+                                @size-change="handleSizeChange"
+                                @current-change="handleCurrentChange"
+                                :current-page="pagination.pageNum"
+                                :page-sizes="[10, 20, 50, 100]"
+                                :page-size="pagination.pageSize"
+                                layout="total, sizes, prev, pager, next, jumper"
+                                :total="pagination.total">
+                            </el-pagination>
+                        </div>
+                    </el-card>
+                </div>
+
+                <!-- 新增/编辑对话框 -->
+                <el-dialog :title="dialogTitle" :visible.sync="dialogVisible" width="70%" :close-on-click-modal="false">
+                    <el-form :model="formData" :rules="formRules" ref="formRef" label-width="110px">
+                        <el-row :gutter="16">
+                            <el-col :span="12">
+                                <el-form-item label="标题" prop="title">
+                                    <el-input v-model="formData.title" maxlength="200" show-word-limit></el-input>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="状态">
+                                    <el-select v-model="formData.status" style="width: 100%;">
+                                        <el-option label="启用" value="enabled"></el-option>
+                                        <el-option label="禁用" value="disabled"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="学科" prop="subject">
+                                    <el-select v-model="formData.subject" style="width: 100%;">
+                                        <el-option label="数学" value="数学"></el-option>
+                                        <el-option label="语文" value="语文"></el-option>
+                                        <el-option label="英语" value="英语"></el-option>
+                                        <el-option label="物理" value="物理"></el-option>
+                                        <el-option label="化学" value="化学"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="年级" prop="grade">
+                                    <el-select v-model="formData.grade" style="width: 100%;">
+                                        <el-option label="一年级" value="一年级"></el-option>
+                                        <el-option label="二年级" value="二年级"></el-option>
+                                        <el-option label="三年级" value="三年级"></el-option>
+                                        <el-option label="四年级" value="四年级"></el-option>
+                                        <el-option label="五年级" value="五年级"></el-option>
+                                        <el-option label="六年级" value="六年级"></el-option>
+                                        <el-option label="七年级" value="七年级"></el-option>
+                                        <el-option label="八年级" value="八年级"></el-option>
+                                        <el-option label="九年级" value="九年级"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="24">
+                                <el-form-item label="摘要">
+                                    <el-input v-model="formData.summary" type="textarea" :rows="2" maxlength="500" show-word-limit></el-input>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="24">
+                                <el-form-item label="知识点">
+                                    <el-tag
+                                        v-for="(point, index) in formData.knowledgePoint"
+                                        :key="index"
+                                        closable
+                                        @close="handleRemoveKnowledgePoint(index)"
+                                        style="margin-right: 10px; margin-bottom: 5px;">
+                                        {{ point }}
+                                    </el-tag>
+                                    <el-input
+                                        v-if="knowledgePointInputVisible"
+                                        v-model="knowledgePointInput"
+                                        ref="knowledgePointInputRef"
+                                        size="small"
+                                        style="width: 150px;"
+                                        @keyup.enter.native="handleAddKnowledgePoint"
+                                        @blur="handleAddKnowledgePoint">
+                                    </el-input>
+                                    <el-button v-else size="small" @click="showKnowledgePointInput">+ 添加知识点</el-button>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="24">
+                                <el-form-item label="知识附件">
+                                    <div class="attachment-list">
+                                        <div v-for="(url, index) in formData.attachmentUrl" :key="index" class="attachment-item">
+                                            <el-tag closable @close="handleRemoveAttachment(index)">
+                                                <a :href="url" target="_blank" style="color: inherit; text-decoration: none;">
+                                                    {{ getFileName(url) }}
+                                                </a>
+                                            </el-tag>
+                                        </div>
+                                    </div>
+                                    <el-upload
+                                        :action="uploadUrl"
+                                        :on-success="handleAttachmentSuccess"
+                                        :before-upload="beforeAttachmentUpload"
+                                        :show-file-list="false">
+                                        <el-button size="small" type="primary">上传附件</el-button>
+                                    </el-upload>
+                                    <span class="form-tip">支持 pdf/doc/docx/xls/xlsx，≤ 10MB</span>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="24">
+                                <el-form-item label="详细内容">
+                                    <el-input v-model="formData.content" type="textarea" :rows="6" maxlength="5000" show-word-limit></el-input>
+                                </el-form-item>
+                            </el-col>
+                        </el-row>
+                    </el-form>
+                    <div slot="footer" class="dialog-footer">
+                        <el-button @click="dialogVisible = false">取消</el-button>
+                        <el-button type="primary" @click="handleSubmit" :loading="submitLoading">确定</el-button>
+                    </div>
+                </el-dialog>
+
+                <!-- 知识关联对话框 -->
+                <el-dialog title="知识关联管理" :visible.sync="relationDialogVisible" width="60%" :close-on-click-modal="false">
+                    <div style="margin-bottom: 20px;">
+                        <el-alert :title="`当前知识：${currentKnowledgeTitle}`" type="info" :closable="false"></el-alert>
+                    </div>
+                    <el-table :data="relationData" stripe style="width: 100%">
+                        <el-table-column prop="sourceTitle" label="源知识" min-width="200"></el-table-column>
+                        <el-table-column prop="targetTitle" label="目标知识" min-width="200"></el-table-column>
+                        <el-table-column prop="relationType" label="关联类型" width="120">
+                            <template slot-scope="scope">
+                                <el-tag size="small">{{ getRelationTypeName(scope.row.relationType) }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="weight" label="权重" width="100" align="center"></el-table-column>
+                        <el-table-column label="操作" width="100" align="center">
+                            <template slot-scope="scope">
+                                <el-button size="mini" type="danger" @click="handleDeleteRelation(scope.row)">删除</el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                    <div style="margin-top: 20px;">
+                        <el-form :inline="true">
+                            <el-form-item label="关联知识">
+                                <el-select v-model="newRelation.targetId" placeholder="请选择知识" style="width: 200px;">
+                                    <el-option
+                                        v-for="item in availableKnowledgeList"
+                                        :key="item.id"
+                                        :label="item.title"
+                                        :value="item.id">
+                                    </el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="关联类型">
+                                <el-select v-model="newRelation.relationType" style="width: 150px;">
+                                    <el-option label="前置知识" value="prerequisite"></el-option>
+                                    <el-option label="相关" value="related"></el-option>
+                                    <el-option label="相似" value="similar"></el-option>
+                                    <el-option label="扩展" value="extends"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item>
+                                <el-button type="primary" @click="handleCreateRelation">添加关联</el-button>
+                            </el-form-item>
+                        </el-form>
+                    </div>
+                    <div slot="footer" class="dialog-footer">
+                        <el-button @click="relationDialogVisible = false">关闭</el-button>
+                    </div>
+                </el-dialog>
+            </template>
+        </admin-layout>
+    </div>
+
+    <script src="/static/js/vue.js"></script>
+    <script src="/static/js/element-ui.min.js"></script>
+    <script src="/static/js/axios.min.js"></script>
+    <script src="/static/js/config/layout-config.js"></script>
+    <script src="/static/js/components/layout.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    activeMenu: 'knowledge',
+                    loading: false,
+                    submitLoading: false,
+                    uploadUrl: '/open/upload',
+                    dialogVisible: false,
+                    relationDialogVisible: false,
+                    dialogTitle: '新增知识',
+                    isEdit: false,
+                    knowledgePointInputVisible: false,
+                    knowledgePointInput: '',
+                    currentKnowledgeId: null,
+                    currentKnowledgeTitle: '',
+                    tableData: [],
+                    relationData: [],
+                    availableKnowledgeList: [],
+                    searchForm: {
+                        keyword: '',
+                        status: '',
+                        subject: '',
+                        grade: ''
+                    },
+                    pagination: {
+                        pageNum: 1,
+                        pageSize: 10,
+                        total: 0
+                    },
+                    formData: {
+                        id: null,
+                        title: '',
+                        summary: '',
+                        knowledgePoint: [],
+                        subject: '',
+                        grade: '',
+                        attachmentUrl: [],
+                        content: '',
+                        status: 'enabled'
+                    },
+                    newRelation: {
+                        targetId: null,
+                        relationType: 'related'
+                    },
+                    formRules: {
+                        title: [
+                            { required: true, message: '请输入标题', trigger: 'blur' },
+                            { min: 1, max: 200, message: '长度 1-200', trigger: 'blur' }
+                        ],
+                        subject: [
+                            { required: true, message: '请选择学科', trigger: 'change' }
+                        ],
+                        grade: [
+                            { required: true, message: '请选择年级', trigger: 'change' }
+                        ]
+                    }
+                }
+            },
+            mounted() {
+                this.loadData();
+                this.loadAvailableKnowledge();
+            },
+            methods: {
+                loadData() {
+                    this.loading = true;
+                    const params = {
+                        pageNum: this.pagination.pageNum,
+                        pageSize: this.pagination.pageSize,
+                        keyword: this.searchForm.keyword,
+                        status: this.searchForm.status,
+                        subject: this.searchForm.subject,
+                        grade: this.searchForm.grade
+                    };
+                    axios.get('/api/knowledge/admin/list', { params })
+                        .then(res => {
+                            if (res.data.code === 200) {
+                                this.tableData = res.data.data.rows;
+                                this.pagination.total = res.data.data.total;
+                            } else {
+                                this.$message.error(res.data.message || '加载失败');
+                            }
+                        })
+                        .catch(() => this.$message.error('加载失败'))
+                        .finally(() => this.loading = false);
+                },
+                loadAvailableKnowledge() {
+                    axios.get('/api/knowledge/admin/list', { params: { pageNum: 1, pageSize: 1000 } })
+                        .then(res => {
+                            if (res.data.code === 200) {
+                                this.availableKnowledgeList = res.data.data.rows || [];
+                            }
+                        })
+                        .catch(() => {});
+                },
+                handleSearch() {
+                    this.pagination.pageNum = 1;
+                    this.loadData();
+                },
+                handleReset() {
+                    this.searchForm = { keyword: '', status: '', subject: '', grade: '' };
+                    this.pagination.pageNum = 1;
+                    this.loadData();
+                },
+                handleSizeChange(val) {
+                    this.pagination.pageSize = val;
+                    this.pagination.pageNum = 1;
+                    this.loadData();
+                },
+                handleCurrentChange(val) {
+                    this.pagination.pageNum = val;
+                    this.loadData();
+                },
+                showCreateDialog() {
+                    this.dialogTitle = '新增知识';
+                    this.isEdit = false;
+                    this.formData = {
+                        id: null,
+                        title: '',
+                        summary: '',
+                        knowledgePoint: [],
+                        subject: '',
+                        grade: '',
+                        attachmentUrl: [],
+                        content: '',
+                        status: 'enabled'
+                    };
+                    this.knowledgePointInputVisible = false;
+                    this.dialogVisible = true;
+                    this.$nextTick(() => this.$refs.formRef && this.$refs.formRef.clearValidate());
+                },
+                handleEdit(row) {
+                    this.dialogTitle = '编辑知识';
+                    this.isEdit = true;
+                    this.formData = {
+                        id: row.id,
+                        title: row.title,
+                        summary: row.summary || '',
+                        knowledgePoint: Array.isArray(row.knowledgePoint) ? [...row.knowledgePoint] : [],
+                        subject: row.subject,
+                        grade: row.grade,
+                        attachmentUrl: Array.isArray(row.attachmentUrl) ? [...row.attachmentUrl] : [],
+                        content: row.content || '',
+                        status: row.status
+                    };
+                    this.knowledgePointInputVisible = false;
+                    this.dialogVisible = true;
+                    this.$nextTick(() => this.$refs.formRef && this.$refs.formRef.clearValidate());
+                },
+                handleSubmit() {
+                    if (!this.$refs.formRef) return;
+                    this.$refs.formRef.validate(valid => {
+                        if (!valid) return;
+                        this.submitLoading = true;
+                        const url = this.isEdit ? '/api/knowledge/admin/update' : '/api/knowledge/admin/create';
+                        axios.post(url, this.formData)
+                            .then(res => {
+                                if (res.data.code === 200) {
+                                    this.$message.success(res.data.message);
+                                    this.dialogVisible = false;
+                                    this.loadData();
+                                    this.loadAvailableKnowledge();
+                                } else {
+                                    this.$message.error(res.data.message || '提交失败');
+                                }
+                            })
+                            .catch(() => this.$message.error('提交失败'))
+                            .finally(() => this.submitLoading = false);
+                    });
+                },
+                handleToggleStatus(row) {
+                    const text = row.status === 'enabled' ? '禁用' : '启用';
+                    this.$confirm(`确定要${text}该知识吗？`, '提示', { type: 'warning' })
+                        .then(() => {
+                            axios.get('/api/knowledge/admin/toggle-status', { params: { id: row.id } })
+                                .then(res => {
+                                    if (res.data.code === 200) {
+                                        this.$message.success(res.data.message);
+                                        this.loadData();
+                                    } else {
+                                        this.$message.error(res.data.message || '操作失败');
+                                    }
+                                })
+                                .catch(() => this.$message.error('操作失败'));
+                        });
+                },
+                handleDelete(row) {
+                    this.$confirm('确定要删除该知识吗？删除后不可恢复！', '警告', { type: 'error' })
+                        .then(() => {
+                            axios.get('/api/knowledge/admin/delete', { params: { id: row.id } })
+                                .then(res => {
+                                    if (res.data.code === 200) {
+                                        this.$message.success(res.data.message);
+                                        this.loadData();
+                                        this.loadAvailableKnowledge();
+                                    } else {
+                                        this.$message.error(res.data.message || '删除失败');
+                                    }
+                                })
+                                .catch(() => this.$message.error('删除失败'));
+                        });
+                },
+                showKnowledgePointInput() {
+                    this.knowledgePointInputVisible = true;
+                    this.$nextTick(() => {
+                        this.$refs.knowledgePointInputRef.focus();
+                    });
+                },
+                handleAddKnowledgePoint() {
+                    const value = this.knowledgePointInput.trim();
+                    if (value && !this.formData.knowledgePoint.includes(value)) {
+                        this.formData.knowledgePoint.push(value);
+                    }
+                    this.knowledgePointInput = '';
+                    this.knowledgePointInputVisible = false;
+                },
+                handleRemoveKnowledgePoint(index) {
+                    this.formData.knowledgePoint.splice(index, 1);
+                },
+                handleAttachmentSuccess(response) {
+                    if (response && response.code === 200) {
+                        const url = (response.data && (response.data.url || response.data.path)) || response.url || response.data;
+                        if (url) {
+                            this.formData.attachmentUrl.push(url);
+                            this.$message.success('附件上传成功');
+                        } else {
+                            this.$message.error('返回数据缺少文件地址');
+                        }
+                    } else {
+                        this.$message.error((response && response.message) || '附件上传失败');
+                    }
+                },
+                beforeAttachmentUpload(file) {
+                    // 允许的MIME类型
+                    const allowedMimeTypes = [
+                        'application/pdf',
+                        'application/msword',
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        'application/vnd.ms-excel',
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    ];
+                    
+                    // 允许的文件扩展名
+                    const allowedExtensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx'];
+                    
+                    // 获取文件扩展名
+                    const fileName = file.name || '';
+                    const fileExtension = fileName.substring(fileName.lastIndexOf('.')).toLowerCase();
+                    
+                    // 检查MIME类型或文件扩展名
+                    const isMimeAllowed = allowedMimeTypes.includes(file.type);
+                    const isExtensionAllowed = allowedExtensions.includes(fileExtension);
+                    
+                    // 如果MIME类型为空或不在允许列表中，则检查文件扩展名
+                    const isAllowed = isMimeAllowed || (file.type === '' && isExtensionAllowed) || isExtensionAllowed;
+                    
+                    const isLt10M = file.size / 1024 / 1024 < 10;
+                    
+                    if (!isAllowed) {
+                        console.log('文件类型验证失败:', {
+                            fileName: fileName,
+                            fileType: file.type,
+                            fileExtension: fileExtension,
+                            isMimeAllowed: isMimeAllowed,
+                            isExtensionAllowed: isExtensionAllowed
+                        });
+                        this.$message.error('仅支持 PDF/DOC/DOCX/XLS/XLSX 格式文件');
+                        return false;
+                    }
+                    if (!isLt10M) {
+                        this.$message.error('文件大小不能超过 10MB');
+                        return false;
+                    }
+                    return true;
+                },
+                handleRemoveAttachment(index) {
+                    this.formData.attachmentUrl.splice(index, 1);
+                },
+                getFileName(url) {
+                    if (!url) return '';
+                    const parts = url.split('/');
+                    return parts[parts.length - 1];
+                },
+                handleViewRelations(row) {
+                    this.currentKnowledgeId = row.id;
+                    this.currentKnowledgeTitle = row.title;
+                    this.loadRelations();
+                    this.relationDialogVisible = true;
+                },
+                loadRelations() {
+                    axios.get('/api/knowledge/admin/relations', { params: { id: this.currentKnowledgeId } })
+                        .then(res => {
+                            if (res.data.code === 200) {
+                                this.relationData = res.data.data || [];
+                            } else {
+                                this.$message.error(res.data.message || '加载关联关系失败');
+                            }
+                        })
+                        .catch(() => this.$message.error('加载关联关系失败'));
+                },
+                handleCreateRelation() {
+                    if (!this.newRelation.targetId) {
+                        this.$message.warning('请选择要关联的知识');
+                        return;
+                    }
+                    axios.post('/api/knowledge/admin/create-relation', {
+                        sourceId: this.currentKnowledgeId,
+                        targetId: this.newRelation.targetId,
+                        relationType: this.newRelation.relationType,
+                        weight: 1.0
+                    })
+                    .then(res => {
+                        if (res.data.code === 200) {
+                            this.$message.success(res.data.message);
+                            this.newRelation = { targetId: null, relationType: 'related' };
+                            this.loadRelations();
+                        } else {
+                            this.$message.error(res.data.message || '创建关联失败');
+                        }
+                    })
+                    .catch(() => this.$message.error('创建关联失败'));
+                },
+                handleDeleteRelation(row) {
+                    this.$confirm('确定要删除该关联关系吗？', '提示', { type: 'warning' })
+                        .then(() => {
+                            axios.get('/api/knowledge/admin/delete-relation', { params: { id: row.id } })
+                                .then(res => {
+                                    if (res.data.code === 200) {
+                                        this.$message.success(res.data.message);
+                                        this.loadRelations();
+                                    } else {
+                                        this.$message.error(res.data.message || '删除失败');
+                                    }
+                                })
+                                .catch(() => this.$message.error('删除失败'));
+                        });
+                },
+                getRelationTypeName(type) {
+                    const map = {
+                        'prerequisite': '前置知识',
+                        'related': '相关',
+                        'similar': '相似',
+                        'extends': '扩展'
+                    };
+                    return map[type] || type;
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+

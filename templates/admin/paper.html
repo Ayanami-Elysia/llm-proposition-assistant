@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>试卷管理 - 后台考试系统</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+    <link rel="stylesheet" href="/static/css/admin.css">
+    <style>
+        .page-container { padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e6e6e6; }
+        .page-header h2 { margin: 0; color: #333; font-size: 24px; font-weight: 600; }
+        .table-card { margin-top: 20px; }
+        .pagination-container { margin-top: 20px; text-align: center; }
+        .image-thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 4px; border: 1px solid #eee; }
+        .form-tip { margin-left: 10px; color: #999; font-size: 12px; }
+        .question-item { padding: 10px; border: 1px solid #eee; margin-bottom: 10px; border-radius: 4px; }
+        .question-item:hover { background: #f5f7fa; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <admin-layout :active-menu="activeMenu">
+            <template #content>
+                <div class="page-container">
+                    <div class="page-header">
+                        <h2>试卷管理</h2>
+                        <div class="page-actions">
+                            <el-button type="primary" @click="showCreateDialog">
+                                <i class="el-icon-plus"></i> 新增试卷
+                            </el-button>
+                        </div>
+                    </div>
+
+                    <!-- 搜索筛选 -->
+                    <el-card>
+                        <el-form :inline="true" :model="searchForm" class="search-form">
+                            <el-form-item label="关键词">
+                                <el-input v-model="searchForm.keyword" placeholder="试卷名称" clearable @keyup.enter.native="handleSearch"></el-input>
+                            </el-form-item>
+                            <el-form-item label="状态">
+                                <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width: 160px;">
+                                    <el-option label="全部" value=""></el-option>
+                                    <el-option label="启用" value="enabled"></el-option>
+                                    <el-option label="禁用" value="disabled"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item>
+                                <el-button type="primary" @click="handleSearch"><i class="el-icon-search"></i> 搜索</el-button>
+                                <el-button @click="handleReset"><i class="el-icon-refresh"></i> 重置</el-button>
+                            </el-form-item>
+                        </el-form>
+                    </el-card>
+
+                    <!-- 表格 -->
+                    <el-card class="table-card">
+                        <el-table :data="tableData" v-loading="loading" stripe style="width: 100%">
+                            <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
+                            <el-table-column label="图片" width="80" align="center">
+                                <template slot-scope="scope">
+                                    <img v-if="scope.row.imageUrl" :src="scope.row.imageUrl" class="image-thumb" />
+                                    <span v-else style="color:#bbb;">无</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="paperName" label="试卷名称" min-width="200" show-overflow-tooltip></el-table-column>
+                            <el-table-column prop="className" label="班级" width="140" align="center" show-overflow-tooltip>
+                                <template slot-scope="scope">
+                                    <span>{{ scope.row.className || '-' }}</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="duration" label="时长(分钟)" width="100" align="center"></el-table-column>
+                            <el-table-column label="开放时间" min-width="180">
+                                <template slot-scope="scope">
+                                    <div v-if="scope.row.startTime || scope.row.endTime">
+                                        <div>{{ formatDateTime(scope.row.startTime) || '不限' }}</div>
+                                        <div style="color:#999;">至 {{ formatDateTime(scope.row.endTime) || '不限' }}</div>
+                                    </div>
+                                    <span v-else style="color:#999;">不限</span>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="questionCount" label="题目数" width="100" align="center"></el-table-column>
+                            <el-table-column prop="totalScore" label="总分" width="100" align="center"></el-table-column>
+                            <el-table-column prop="status" label="状态" width="100" align="center">
+                                <template slot-scope="scope">
+                                    <el-tag :type="scope.row.status === 'enabled' ? 'success' : 'info'" size="small">
+                                        {{ scope.row.status === 'enabled' ? '启用' : '禁用' }}
+                                    </el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="操作" align="center" fixed="right" width="400">
+                                <template slot-scope="scope">
+                                    <el-button size="mini" type="primary" @click="handleEdit(scope.row)">编辑</el-button>
+                                    <el-button size="mini" type="success" @click="handleManageQuestions(scope.row)">题目</el-button>
+                                    <el-button size="mini" type="warning" @click="handleAutoGenerate(scope.row)">自动组卷</el-button>
+                                    <el-button size="mini" type="danger" @click="handleDelete(scope.row)">删除</el-button>
+                                    <el-button size="mini" @click="handleToggleStatus(scope.row)">
+                                        {{ scope.row.status === 'enabled' ? '禁用' : '启用' }}
+                                    </el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                        <div class="pagination-container">
+                            <el-pagination
+                                @size-change="handleSizeChange"
+                                @current-change="handleCurrentChange"
+                                :current-page="pagination.pageNum"
+                                :page-sizes="[10, 20, 50, 100]"
+                                :page-size="pagination.pageSize"
+                                layout="total, sizes, prev, pager, next, jumper"
+                                :total="pagination.total">
+                            </el-pagination>
+                        </div>
+                    </el-card>
+                </div>
+
+                <!-- 新增/编辑对话框 -->
+                <el-dialog :title="dialogTitle" :visible.sync="dialogVisible" width="60%" :close-on-click-modal="false">
+                    <el-form :model="formData" :rules="formRules" ref="formRef" label-width="120px">
+                        <el-row :gutter="16">
+                            <el-col :span="12">
+                                <el-form-item label="试卷名称" prop="paperName">
+                                    <el-input v-model="formData.paperName" maxlength="200" show-word-limit></el-input>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="考试时长(分钟)" prop="duration">
+                                    <el-input-number v-model="formData.duration" :min="1" :max="300" style="width: 100%;"></el-input-number>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="开放开始时间">
+                                    <el-date-picker v-model="formData.startTime" type="datetime" style="width: 100%;" value-format="yyyy-MM-dd HH:mm:ss"></el-date-picker>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="开放结束时间">
+                                    <el-date-picker v-model="formData.endTime" type="datetime" style="width: 100%;" value-format="yyyy-MM-dd HH:mm:ss"></el-date-picker>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="状态">
+                                    <el-select v-model="formData.status" style="width: 100%;">
+                                        <el-option label="启用" value="enabled"></el-option>
+                                        <el-option label="禁用" value="disabled"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="试卷图片">
+                                    <div style="display:flex;align-items:center;gap:12px;">
+                                        <img v-if="formData.imageUrl" :src="formData.imageUrl" class="image-thumb" />
+                                        <el-upload
+                                            class="avatar-uploader"
+                                            :action="uploadUrl"
+                                            :show-file-list="false"
+                                            :on-success="handleImageSuccess"
+                                            :before-upload="beforeImageUpload">
+                                            <div class="avatar-upload-trigger">
+                                                <i class="el-icon-camera"></i>
+                                                <span>{{ formData.imageUrl ? '更换图片' : '上传图片' }}</span>
+                                            </div>
+                                        </el-upload>
+                                        <span class="form-tip">支持 jpg/png，≤ 2MB</span>
+                                    </div>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="24">
+                                <el-form-item label="试卷介绍">
+                                    <el-input v-model="formData.description" type="textarea" :rows="4" maxlength="1000" show-word-limit></el-input>
+                                </el-form-item>
+                            </el-col>
+                        </el-row>
+                    </el-form>
+                    <div slot="footer" class="dialog-footer">
+                        <el-button @click="dialogVisible = false">取消</el-button>
+                        <el-button type="primary" @click="handleSubmit" :loading="submitLoading">确定</el-button>
+                    </div>
+                </el-dialog>
+
+                <!-- 题目管理对话框 -->
+                <el-dialog title="试卷题目管理" :visible.sync="questionDialogVisible" width="80%" :close-on-click-modal="false">
+                    <div style="margin-bottom: 20px;">
+                        <el-alert :title="`当前试卷：${currentPaperName}（共${paperQuestions.length}道题，总分：${currentTotalScore}分）`" type="info" :closable="false"></el-alert>
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <el-button type="primary" size="small" @click="showAddQuestionDialog">手动添加题目</el-button>
+                    </div>
+                    <el-table :data="paperQuestions" stripe style="width: 100%">
+                        <el-table-column type="index" label="序号" width="60" align="center"></el-table-column>
+                        <el-table-column prop="content" label="题目内容" min-width="300" show-overflow-tooltip></el-table-column>
+                        <el-table-column prop="questionType" label="题型" width="100" align="center">
+                            <template slot-scope="scope">
+                                <el-tag size="small">{{ getQuestionTypeName(scope.row.questionType) }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="score" label="分值" width="100" align="center"></el-table-column>
+                        <el-table-column label="操作" width="100" align="center">
+                            <template slot-scope="scope">
+                                <el-button size="mini" type="danger" @click="handleRemoveQuestion(scope.row)">删除</el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                    <div slot="footer" class="dialog-footer">
+                        <el-button @click="questionDialogVisible = false">关闭</el-button>
+                    </div>
+                </el-dialog>
+
+                <!-- 手动添加题目对话框 -->
+                <el-dialog title="添加题目" :visible.sync="addQuestionDialogVisible" width="70%" :close-on-click-modal="false">
+                    <el-form :inline="true" style="margin-bottom: 20px;">
+                        <el-form-item label="关键词">
+                            <el-input v-model="questionSearchForm.keyword" placeholder="题目内容" clearable @keyup.enter.native="searchQuestions"></el-input>
+                        </el-form-item>
+                        <el-form-item label="题型">
+                            <el-select v-model="questionSearchForm.questionType" placeholder="请选择" clearable style="width: 150px;">
+                                <el-option label="全部" value=""></el-option>
+                                <el-option label="单选题" value="single_choice"></el-option>
+                                <el-option label="多选题" value="multiple_choice"></el-option>
+                                <el-option label="填空题" value="fill_blank"></el-option>
+                                <el-option label="解答题" value="essay"></el-option>
+                                <el-option label="判断题" value="judge"></el-option>
+                            </el-select>
+                        </el-form-item>
+                        <el-form-item>
+                            <el-button type="primary" @click="searchQuestions">搜索</el-button>
+                        </el-form-item>
+                    </el-form>
+                    <el-table ref="questionTable" :data="availableQuestions" stripe style="width: 100%" max-height="400">
+                        <el-table-column type="selection" width="55"></el-table-column>
+                        <el-table-column prop="content" label="题目内容" min-width="300" show-overflow-tooltip></el-table-column>
+                        <el-table-column prop="questionType" label="题型" width="100" align="center">
+                            <template slot-scope="scope">
+                                <el-tag size="small">{{ getQuestionTypeName(scope.row.questionType) }}</el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="score" label="分值" width="80" align="center"></el-table-column>
+                    </el-table>
+                    <div slot="footer" class="dialog-footer">
+                        <el-button @click="addQuestionDialogVisible = false">取消</el-button>
+                        <el-button type="primary" @click="handleAddSelectedQuestions">添加选中题目</el-button>
+                    </div>
+                </el-dialog>
+
+                <!-- 自动组卷对话框 -->
+                <el-dialog title="自动组卷" :visible.sync="autoGenerateDialogVisible" width="50%" :close-on-click-modal="false">
+                    <el-form :model="autoGenerateForm" label-width="120px">
+                        <el-form-item label="学科">
+                            <el-select v-model="autoGenerateForm.subject" placeholder="请选择（可选）" clearable style="width: 100%;">
+                                <el-option label="数学" value="数学"></el-option>
+                                <el-option label="语文" value="语文"></el-option>
+                                <el-option label="英语" value="英语"></el-option>
+                            </el-select>
+                        </el-form-item>
+                        <el-form-item label="年级">
+                            <el-select v-model="autoGenerateForm.grade" placeholder="请选择（可选）" clearable style="width: 100%;">
+                                <el-option label="一年级" value="一年级"></el-option>
+                                <el-option label="二年级" value="二年级"></el-option>
+                                <el-option label="三年级" value="三年级"></el-option>
+                                <el-option label="四年级" value="四年级"></el-option>
+                                <el-option label="五年级" value="五年级"></el-option>
+                                <el-option label="六年级" value="六年级"></el-option>
+                                <el-option label="七年级" value="七年级"></el-option>
+                                <el-option label="八年级" value="八年级"></el-option>
+                                <el-option label="九年级" value="九年级"></el-option>
+                            </el-select>
+                        </el-form-item>
+                        <el-form-item label="单选题数量">
+                            <el-input-number v-model="autoGenerateForm.questionConfig.single_choice" :min="0" style="width: 100%;"></el-input-number>
+                        </el-form-item>
+                        <el-form-item label="多选题数量">
+                            <el-input-number v-model="autoGenerateForm.questionConfig.multiple_choice" :min="0" style="width: 100%;"></el-input-number>
+                        </el-form-item>
+                        <el-form-item label="填空题数量">
+                            <el-input-number v-model="autoGenerateForm.questionConfig.fill_blank" :min="0" style="width: 100%;"></el-input-number>
+                        </el-form-item>
+                        <el-form-item label="解答题数量">
+                            <el-input-number v-model="autoGenerateForm.questionConfig.essay" :min="0" style="width: 100%;"></el-input-number>
+                        </el-form-item>
+                        <el-form-item label="判断题数量">
+                            <el-input-number v-model="autoGenerateForm.questionConfig.judge" :min="0" style="width: 100%;"></el-input-number>
+                        </el-form-item>
+                        <el-alert title="注意：自动组卷会清空试卷中现有的所有题目" type="warning" :closable="false" style="margin-top: 20px;"></el-alert>
+                    </el-form>
+                    <div slot="footer" class="dialog-footer">
+                        <el-button @click="autoGenerateDialogVisible = false">取消</el-button>
+                        <el-button type="primary" @click="handleAutoGenerateSubmit" :loading="autoGenerateLoading">确定组卷</el-button>
+                    </div>
+                </el-dialog>
+            </template>
+        </admin-layout>
+    </div>
+
+    <script src="/static/js/vue.js"></script>
+    <script src="/static/js/element-ui.min.js"></script>
+    <script src="/static/js/axios.min.js"></script>
+    <script src="/static/js/config/layout-config.js"></script>
+    <script src="/static/js/components/layout.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    activeMenu: 'paper',
+                    loading: false,
+                    submitLoading: false,
+                    autoGenerateLoading: false,
+                    uploadUrl: '/open/upload',
+                    dialogVisible: false,
+                    questionDialogVisible: false,
+                    addQuestionDialogVisible: false,
+                    autoGenerateDialogVisible: false,
+                    dialogTitle: '新增试卷',
+                    isEdit: false,
+                    currentPaperId: null,
+                    currentPaperName: '',
+                    currentTotalScore: '0',
+                    tableData: [],
+                    paperQuestions: [],
+                    availableQuestions: [],
+                    selectedQuestions: [],
+                    searchForm: {
+                        keyword: '',
+                        status: ''
+                    },
+                    questionSearchForm: {
+                        keyword: '',
+                        questionType: ''
+                    },
+                    pagination: {
+                        pageNum: 1,
+                        pageSize: 10,
+                        total: 0
+                    },
+                    formData: {
+                        id: null,
+                        paperName: '',
+                        duration: 60,
+                        startTime: '',
+                        endTime: '',
+                        description: '',
+                        imageUrl: '',
+                        status: 'enabled'
+                    },
+                    autoGenerateForm: {
+                        subject: '',
+                        grade: '',
+                        questionConfig: {
+                            single_choice: 0,
+                            multiple_choice: 0,
+                            fill_blank: 0,
+                            essay: 0,
+                            judge: 0
+                        }
+                    },
+                    formRules: {
+                        paperName: [
+                            { required: true, message: '请输入试卷名称', trigger: 'blur' },
+                            { min: 1, max: 200, message: '长度 1-200', trigger: 'blur' }
+                        ],
+                        duration: [
+                            { required: true, message: '请输入考试时长', trigger: 'blur' }
+                        ]
+                    }
+                }
+            },
+            mounted() {
+                this.loadData();
+            },
+            methods: {
+                loadData() {
+                    this.loading = true;
+                    const params = {
+                        pageNum: this.pagination.pageNum,
+                        pageSize: this.pagination.pageSize,
+                        keyword: this.searchForm.keyword,
+                        status: this.searchForm.status
+                    };
+                    axios.get('/api/paper/admin/list', { params })
+                        .then(res => {
+                            if (res.data.code === 200) {
+                                this.tableData = res.data.data.rows;
+                                this.pagination.total = res.data.data.total;
+                            } else {
+                                this.$message.error(res.data.message || '加载失败');
+                            }
+                        })
+                        .catch(() => this.$message.error('加载失败'))
+                        .finally(() => this.loading = false);
+                },
+                handleSearch() {
+                    this.pagination.pageNum = 1;
+                    this.loadData();
+                },
+                handleReset() {
+                    this.searchForm = { keyword: '', status: '' };
+                    this.pagination.pageNum = 1;
+                    this.loadData();
+                },
+                handleSizeChange(val) {
+                    this.pagination.pageSize = val;
+                    this.pagination.pageNum = 1;
+                    this.loadData();
+                },
+                handleCurrentChange(val) {
+                    this.pagination.pageNum = val;
+                    this.loadData();
+                },
+                showCreateDialog() {
+                    this.dialogTitle = '新增试卷';
+                    this.isEdit = false;
+                    this.formData = {
+                        id: null,
+                        paperName: '',
+                        duration: 60,
+                        startTime: '',
+                        endTime: '',
+                        description: '',
+                        imageUrl: '',
+                        status: 'enabled'
+                    };
+                    this.dialogVisible = true;
+                    this.$nextTick(() => this.$refs.formRef && this.$refs.formRef.clearValidate());
+                },
+                handleEdit(row) {
+                    this.dialogTitle = '编辑试卷';
+                    this.isEdit = true;
+                    this.formData = {
+                        id: row.id,
+                        paperName: row.paperName,
+                        duration: row.duration,
+                        startTime: this.formatDateTime(row.startTime) || '',
+                        endTime:  this.formatDateTime(row.endTime) || '',
+                        description: row.description || '',
+                        imageUrl: row.imageUrl || '',
+                        status: row.status
+                    };
+                    this.dialogVisible = true;
+                    this.$nextTick(() => this.$refs.formRef && this.$refs.formRef.clearValidate());
+                },
+                handleSubmit() {
+                    if (!this.$refs.formRef) return;
+                    this.$refs.formRef.validate(valid => {
+                        if (!valid) return;
+                        this.submitLoading = true;
+                        const url = this.isEdit ? '/api/paper/admin/update' : '/api/paper/admin/create';
+                        axios.post(url, this.formData)
+                            .then(res => {
+                                if (res.data.code === 200) {
+                                    this.$message.success(res.data.message);
+                                    this.dialogVisible = false;
+                                    this.loadData();
+                                } else {
+                                    this.$message.error(res.data.message || '提交失败');
+                                }
+                            })
+                            .catch(() => this.$message.error('提交失败'))
+                            .finally(() => this.submitLoading = false);
+                    });
+                },
+                handleToggleStatus(row) {
+                    const text = row.status === 'enabled' ? '禁用' : '启用';
+                    this.$confirm(`确定要${text}该试卷吗？`, '提示', { type: 'warning' })
+                        .then(() => {
+                            axios.get('/api/paper/admin/toggle-status', { params: { id: row.id } })
+                                .then(res => {
+                                    if (res.data.code === 200) {
+                                        this.$message.success(res.data.message);
+                                        this.loadData();
+                                    } else {
+                                        this.$message.error(res.data.message || '操作失败');
+                                    }
+                                })
+                                .catch(() => this.$message.error('操作失败'));
+                        });
+                },
+                handleDelete(row) {
+                    this.$confirm('确定要删除该试卷吗？删除后不可恢复！', '警告', { type: 'error' })
+                        .then(() => {
+                            axios.get('/api/paper/admin/delete', { params: { id: row.id } })
+                                .then(res => {
+                                    if (res.data.code === 200) {
+                                        this.$message.success(res.data.message);
+                                        this.loadData();
+                                    } else {
+                                        this.$message.error(res.data.message || '删除失败');
+                                    }
+                                })
+                                .catch(() => this.$message.error('删除失败'));
+                        });
+                },
+                handleManageQuestions(row) {
+                    this.currentPaperId = row.id;
+                    this.currentPaperName = row.paperName;
+                    this.currentTotalScore = row.totalScore || '0';
+                    this.loadPaperQuestions();
+                    this.questionDialogVisible = true;
+                },
+                loadPaperQuestions() {
+                    axios.get('/api/paper/admin/questions', { params: { paperId: this.currentPaperId } })
+                        .then(res => {
+                            if (res.data.code === 200) {
+                                this.paperQuestions = res.data.data || [];
+                                // 计算总分
+                                let total = 0;
+                                this.paperQuestions.forEach(q => {
+                                    const score = parseFloat(q.score || q.defaultScore || 0);
+                                    total += score;
+                                });
+                                this.currentTotalScore = total.toString();
+                            } else {
+                                this.$message.error(res.data.message || '加载题目失败');
+                            }
+                        })
+                        .catch(() => this.$message.error('加载题目失败'));
+                },
+                showAddQuestionDialog() {
+                    this.questionSearchForm = { keyword: '', questionType: '' };
+                    this.availableQuestions = [];
+                    this.selectedQuestions = [];
+                    this.addQuestionDialogVisible = true;
+                },
+                searchQuestions() {
+                    const params = {
+                        pageNum: 1,
+                        pageSize: 100,
+                        status: 'enabled',
+                        keyword: this.questionSearchForm.keyword,
+                        questionType: this.questionSearchForm.questionType
+                    };
+                    axios.get('/api/question/admin/list', { params })
+                        .then(res => {
+                            if (res.data.code === 200) {
+                                this.availableQuestions = res.data.data.rows || [];
+                            } else {
+                                this.$message.error(res.data.message || '搜索失败');
+                            }
+                        })
+                        .catch(() => this.$message.error('搜索失败'));
+                },
+                handleAddSelectedQuestions() {
+                    const selection = this.$refs.questionTable.selection || [];
+                    if (selection.length === 0) {
+                        this.$message.warning('请至少选择一道题目');
+                        return;
+                    }
+                    
+                    let successCount = 0;
+                    let failCount = 0;
+                    const promises = selection.map(q => {
+                        return axios.post('/api/paper/admin/add-question', {
+                            paperId: this.currentPaperId,
+                            questionId: q.id
+                        }).then(() => {
+                            successCount++;
+                        }).catch(() => {
+                            failCount++;
+                        });
+                    });
+
+                    Promise.all(promises).then(() => {
+                        if (successCount > 0) {
+                            this.$message.success(`成功添加${successCount}道题目`);
+                            this.loadPaperQuestions();
+                            this.loadData();
+                        }
+                        if (failCount > 0) {
+                            this.$message.warning(`${failCount}道题目添加失败（可能已存在）`);
+                        }
+                        this.addQuestionDialogVisible = false;
+                    });
+                },
+                handleRemoveQuestion(row) {
+                    this.$confirm('确定要从试卷中删除该题目吗？', '提示', { type: 'warning' })
+                        .then(() => {
+                            axios.post('/api/paper/admin/remove-question', {
+                                paperId: this.currentPaperId,
+                                paperQuestionId: row.id
+                            })
+                            .then(res => {
+                                if (res.data.code === 200) {
+                                    this.$message.success(res.data.message);
+                                    this.loadPaperQuestions();
+                                    this.loadData();
+                                } else {
+                                    this.$message.error(res.data.message || '删除失败');
+                                }
+                            })
+                            .catch(() => this.$message.error('删除失败'));
+                        });
+                },
+                handleAutoGenerate(row) {
+                    this.currentPaperId = row.id;
+                    this.autoGenerateForm = {
+                        subject: '',
+                        grade: '',
+                        questionConfig: {
+                            single_choice: 0,
+                            multiple_choice: 0,
+                            fill_blank: 0,
+                            essay: 0,
+                            judge: 0
+                        }
+                    };
+                    this.autoGenerateDialogVisible = true;
+                },
+                handleAutoGenerateSubmit() {
+                    const config = this.autoGenerateForm.questionConfig;
+                    const total = config.single_choice + config.multiple_choice + config.fill_blank + config.essay + config.judge;
+                    if (total === 0) {
+                        this.$message.warning('请至少配置一种题型的数量');
+                        return;
+                    }
+
+                    this.$confirm('确定要自动组卷吗？这将清空试卷中现有的所有题目！', '警告', { type: 'warning' })
+                        .then(() => {
+                            this.autoGenerateLoading = true;
+                            axios.post('/api/paper/admin/auto-generate', {
+                                paperId: this.currentPaperId,
+                                subject: this.autoGenerateForm.subject,
+                                grade: this.autoGenerateForm.grade,
+                                questionConfig: config
+                            })
+                            .then(res => {
+                                if (res.data.code === 200) {
+                                    this.$message.success(res.data.message);
+                                    this.autoGenerateDialogVisible = false;
+                                    this.loadData();
+                                } else {
+                                    this.$message.error(res.data.message || '自动组卷失败');
+                                }
+                            })
+                            .catch(() => this.$message.error('自动组卷失败'))
+                            .finally(() => this.autoGenerateLoading = false);
+                        });
+                },
+                getQuestionTypeName(type) {
+                    const map = {
+                        'single_choice': '单选题',
+                        'multiple_choice': '多选题',
+                        'fill_blank': '填空题',
+                        'essay': '解答题',
+                        'judge': '判断题'
+                    };
+                    return map[type] || type;
+                },
+                handleImageSuccess(response) {
+                    if (response && response.code === 200) {
+                        const url = (response.data && (response.data.url || response.data.path)) || response.url || response.data;
+                        if (url) {
+                            this.formData.imageUrl = url;
+                            this.$message.success('图片上传成功');
+                        } else {
+                            this.$message.error('返回数据缺少文件地址');
+                        }
+                    } else {
+                        this.$message.error((response && response.message) || '图片上传失败');
+                    }
+                },
+                beforeImageUpload(file) {
+                    const isJpgOrPng = file.type === 'image/jpeg' || file.type === 'image/png';
+                    const isLt2M = file.size / 1024 / 1024 < 2;
+                    if (!isJpgOrPng) {
+                        this.$message.error('仅支持 JPG/PNG 格式图片');
+                        return false;
+                    }
+                    if (!isLt2M) {
+                        this.$message.error('图片大小不能超过 2MB');
+                        return false;
+                    }
+                    return true;
+                },
+                formatDateTime(dateTime) {
+                    if (!dateTime) return '';
+                    
+                    // 如果是字符串，尝试转换为Date对象
+                    let date;
+                    if (typeof dateTime === 'string') {
+                        date = new Date(dateTime);
+                    } else if (dateTime instanceof Date) {
+                        date = dateTime;
+                    } else {
+                        return dateTime;
+                    }
+                    
+                    // 检查日期是否有效
+                    if (isNaN(date.getTime())) {
+                        return dateTime;
+                    }
+                    
+                    // 格式化为 YYYY-MM-DD HH:mm:ss
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    const hours = String(date.getHours()).padStart(2, '0');
+                    const minutes = String(date.getMinutes()).padStart(2, '0');
+                    const seconds = String(date.getSeconds()).padStart(2, '0');
+                    
+                    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+

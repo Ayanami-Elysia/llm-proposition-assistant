@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>题库管理 - 后台考试系统</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+    <link rel="stylesheet" href="/static/css/admin.css">
+    <style>
+        .page-container { padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e6e6e6; }
+        .page-header h2 { margin: 0; color: #333; font-size: 24px; font-weight: 600; }
+        .table-card { margin-top: 20px; }
+        .pagination-container { margin-top: 20px; text-align: center; }
+        .image-thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 4px; border: 1px solid #eee; }
+        .form-tip { margin-left: 10px; color: #999; font-size: 12px; }
+        .question-content { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <admin-layout :active-menu="activeMenu">
+            <template #content>
+                <div class="page-container">
+                    <div class="page-header">
+                        <h2>题库管理</h2>
+                        <div class="page-actions">
+                            <el-button type="success" @click="showAIDialog" icon="el-icon-magic-stick">
+                                智能命题
+                            </el-button>
+                            <el-button type="primary" @click="showCreateDialog">
+                                <i class="el-icon-plus"></i> 新增题目
+                            </el-button>
+                        </div>
+                    </div>
+
+                    <!-- 搜索筛选 -->
+                    <el-card>
+                        <el-form :inline="true" :model="searchForm" class="search-form">
+                            <el-form-item label="关键词">
+                                <el-input v-model="searchForm.keyword" placeholder="题目内容" clearable @keyup.enter.native="handleSearch"></el-input>
+                            </el-form-item>
+                            <el-form-item label="题型">
+                                <el-select v-model="searchForm.questionType" placeholder="请选择" clearable style="width: 160px;">
+                                    <el-option label="全部" value=""></el-option>
+                                    <el-option label="单选题" value="single_choice"></el-option>
+                                    <el-option label="多选题" value="multiple_choice"></el-option>
+                                    <el-option label="填空题" value="fill_blank"></el-option>
+                                    <el-option label="解答题" value="essay"></el-option>
+                                    <el-option label="判断题" value="judge"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="学科">
+                                <el-select v-model="searchForm.subject" placeholder="请选择" clearable style="width: 160px;">
+                                    <el-option label="全部" value=""></el-option>
+                                    <el-option label="数学" value="数学"></el-option>
+                                    <el-option label="语文" value="语文"></el-option>
+                                    <el-option label="英语" value="英语"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="年级">
+                                <el-select v-model="searchForm.grade" placeholder="请选择" clearable style="width: 160px;">
+                                    <el-option label="全部" value=""></el-option>
+                                    <el-option label="一年级" value="一年级"></el-option>
+                                    <el-option label="二年级" value="二年级"></el-option>
+                                    <el-option label="三年级" value="三年级"></el-option>
+                                    <el-option label="四年级" value="四年级"></el-option>
+                                    <el-option label="五年级" value="五年级"></el-option>
+                                    <el-option label="六年级" value="六年级"></el-option>
+                                    <el-option label="七年级" value="七年级"></el-option>
+                                    <el-option label="八年级" value="八年级"></el-option>
+                                    <el-option label="九年级" value="九年级"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="状态">
+                                <el-select v-model="searchForm.status" placeholder="请选择" clearable style="width: 160px;">
+                                    <el-option label="全部" value=""></el-option>
+                                    <el-option label="启用" value="enabled"></el-option>
+                                    <el-option label="禁用" value="disabled"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item>
+                                <el-button type="primary" @click="handleSearch"><i class="el-icon-search"></i> 搜索</el-button>
+                                <el-button @click="handleReset"><i class="el-icon-refresh"></i> 重置</el-button>
+                            </el-form-item>
+                        </el-form>
+                    </el-card>
+
+                    <!-- 表格 -->
+                    <el-card class="table-card">
+                        <el-table :data="tableData" v-loading="loading" stripe style="width: 100%">
+                            <el-table-column prop="id" label="ID" width="70" align="center"></el-table-column>
+                            <el-table-column prop="content" label="题目内容" min-width="200" show-overflow-tooltip>
+                                <template slot-scope="scope">
+                                    <div class="question-content">{{ scope.row.content }}</div>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="questionType" label="题型" width="100" align="center">
+                                <template slot-scope="scope">
+                                    <el-tag size="small">{{ getQuestionTypeName(scope.row.questionType) }}</el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="score" label="分值" width="80" align="center"></el-table-column>
+                            <el-table-column prop="subject" label="学科" width="100" align="center"></el-table-column>
+                            <el-table-column prop="grade" label="年级" width="100" align="center"></el-table-column>
+                            <!-- <el-table-column prop="category" label="题型分类" width="120" align="center"></el-table-column> -->
+                            <el-table-column prop="status" label="状态" width="100" align="center">
+                                <template slot-scope="scope">
+                                    <el-tag :type="scope.row.status === 'enabled' ? 'success' : 'info'" size="small">
+                                        {{ scope.row.status === 'enabled' ? '启用' : '禁用' }}
+                                    </el-tag>
+                                </template>
+                            </el-table-column>
+                            <el-table-column label="操作" align="center" fixed="right" width="380">
+                                <template slot-scope="scope">
+                                    <el-button size="mini" type="primary" @click="handleEdit(scope.row)">编辑</el-button>
+                                    <el-button size="mini" type="danger" @click="handleDelete(scope.row)">删除</el-button>
+                                    <el-button size="mini" @click="handleToggleStatus(scope.row)">
+                                        {{ scope.row.status === 'enabled' ? '禁用' : '启用' }}
+                                    </el-button>
+                                    <el-dropdown @command="(cmd) => handleAICommand(cmd, scope.row)" size="mini" v-show="false">
+                                        <el-button size="mini" type="success">
+                                            AI分析<i class="el-icon-arrow-down el-icon--right"></i>
+                                        </el-button>
+                                        <el-dropdown-menu slot="dropdown">
+                                            <el-dropdown-item command="difficulty">难度评估</el-dropdown-item>
+                                            <el-dropdown-item command="knowledge">知识点分析</el-dropdown-item>
+                                        </el-dropdown-menu>
+                                    </el-dropdown>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                        <div class="pagination-container">
+                            <el-pagination
+                                @size-change="handleSizeChange"
+                                @current-change="handleCurrentChange"
+                                :current-page="pagination.pageNum"
+                                :page-sizes="[10, 20, 50, 100]"
+                                :page-size="pagination.pageSize"
+                                layout="total, sizes, prev, pager, next, jumper"
+                                :total="pagination.total">
+                            </el-pagination>
+                        </div>
+                    </el-card>
+                </div>
+
+                <!-- 新增/编辑对话框 -->
+                <el-dialog :title="dialogTitle" :visible.sync="dialogVisible" width="80%" :close-on-click-modal="false">
+                    <el-form :model="formData" :rules="formRules" ref="formRef" label-width="120px">
+                        <el-row :gutter="16">
+                            <el-col :span="24">
+                                <el-form-item label="题目内容" prop="content">
+                                    <el-input v-model="formData.content" type="textarea" :rows="3" maxlength="2000" show-word-limit></el-input>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="题型" prop="questionType">
+                                    <el-select v-model="formData.questionType" style="width: 100%;" @change="handleQuestionTypeChange">
+                                        <el-option label="单选题" value="single_choice"></el-option>
+                                        <el-option label="多选题" value="multiple_choice"></el-option>
+                                        <el-option label="填空题" value="fill_blank"></el-option>
+                                        <el-option label="解答题" value="essay"></el-option>
+                                        <el-option label="判断题" value="judge"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="分值" prop="score">
+                                    <el-input v-model="formData.score" placeholder="例如：10"></el-input>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12" v-if="showOptions">
+                                <el-form-item label="选项A" prop="optionA">
+                                    <el-input v-model="formData.optionA" type="textarea" :rows="2" maxlength="500"></el-input>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12" v-if="showOptions">
+                                <el-form-item label="选项B" prop="optionB">
+                                    <el-input v-model="formData.optionB" type="textarea" :rows="2" maxlength="500"></el-input>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12" v-if="showOptionC">
+                                <el-form-item label="选项C">
+                                    <el-input v-model="formData.optionC" type="textarea" :rows="2" maxlength="500"></el-input>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12" v-if="showOptionC">
+                                <el-form-item label="选项D">
+                                    <el-input v-model="formData.optionD" type="textarea" :rows="2" maxlength="500"></el-input>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="24">
+                                <el-form-item label="正确答案" prop="correctAnswer">
+                                    <el-input v-model="formData.correctAnswer" :placeholder="getCorrectAnswerPlaceholder()" maxlength="500"></el-input>
+                                    <span class="form-tip">{{ getCorrectAnswerTip() }}</span>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="学科">
+                                    <el-select v-model="formData.subject" style="width: 100%;" clearable>
+                                        <el-option label="数学" value="数学"></el-option>
+                                        <el-option label="语文" value="语文"></el-option>
+                                        <el-option label="英语" value="英语"></el-option>
+                                        <el-option label="物理" value="物理"></el-option>
+                                        <el-option label="化学" value="化学"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="年级">
+                                    <el-select v-model="formData.grade" style="width: 100%;" clearable>
+                                        <el-option label="一年级" value="一年级"></el-option>
+                                        <el-option label="二年级" value="二年级"></el-option>
+                                        <el-option label="三年级" value="三年级"></el-option>
+                                        <el-option label="四年级" value="四年级"></el-option>
+                                        <el-option label="五年级" value="五年级"></el-option>
+                                        <el-option label="六年级" value="六年级"></el-option>
+                                        <el-option label="七年级" value="七年级"></el-option>
+                                        <el-option label="八年级" value="八年级"></el-option>
+                                        <el-option label="九年级" value="九年级"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="题型分类" v-show="false">
+                                    <el-select v-model="formData.category" style="width: 100%;" clearable>
+                                        <el-option label="四则运算" value="四则运算"></el-option>
+                                        <el-option label="代数方程" value="代数方程"></el-option>
+                                        <el-option label="几何证明" value="几何证明"></el-option>
+                                        <el-option label="函数分析" value="函数分析"></el-option>
+                                        <el-option label="应用题" value="应用题"></el-option>
+                                        <el-option label="其他" value="其他"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="关联知识库" v-show="false">
+                                    <el-select v-model="formData.knowledgeId" style="width: 100%;" clearable filterable>
+                                        <el-option
+                                            v-for="item in knowledgeList"
+                                            :key="item.id"
+                                            :label="item.title"
+                                            :value="item.id">
+                                        </el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="状态">
+                                    <el-select v-model="formData.status" style="width: 100%;">
+                                        <el-option label="启用" value="enabled"></el-option>
+                                        <el-option label="禁用" value="disabled"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="题目图片">
+                                    <div style="display:flex;align-items:center;gap:12px;">
+                                        <img v-if="formData.imageUrl" :src="formData.imageUrl" class="image-thumb" />
+                                        <el-upload
+                                            class="avatar-uploader"
+                                            :action="uploadUrl"
+                                            :show-file-list="false"
+                                            :on-success="handleImageSuccess"
+                                            :before-upload="beforeImageUpload">
+                                            <div class="avatar-upload-trigger">
+                                                <i class="el-icon-camera"></i>
+                                                <span>{{ formData.imageUrl ? '更换图片' : '上传图片' }}</span>
+                                            </div>
+                                        </el-upload>
+                                        <span class="form-tip">支持 jpg/png，≤ 2MB</span>
+                                    </div>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="24">
+                                <el-form-item label="题目解析">
+                                    <el-input v-model="formData.analysis" type="textarea" :rows="4" maxlength="2000" show-word-limit></el-input>
+                                </el-form-item>
+                            </el-col>
+                        </el-row>
+                    </el-form>
+                    <div slot="footer" class="dialog-footer">
+                        <el-button @click="dialogVisible = false">取消</el-button>
+                        <el-button type="primary" @click="handleSubmit" :loading="submitLoading">确定</el-button>
+                    </div>
+                </el-dialog>
+
+                <!-- AI智能命题对话框 -->
+                <el-dialog title="AI智能命题" :visible.sync="aiDialogVisible" width="70%" :close-on-click-modal="false">
+                    <el-form :model="aiForm" :rules="aiFormRules" ref="aiFormRef" label-width="120px">
+                        <el-row :gutter="16">
+                            <el-col :span="12">
+                                <el-form-item label="学科" prop="subject">
+                                    <el-select v-model="aiForm.subject" style="width: 100%;">
+                                        <el-option label="数学" value="数学"></el-option>
+                                        <el-option label="语文" value="语文"></el-option>
+                                        <el-option label="英语" value="英语"></el-option>
+                                        <el-option label="物理" value="物理"></el-option>
+                                        <el-option label="化学" value="化学"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="年级" prop="grade">
+                                    <el-select v-model="aiForm.grade" style="width: 100%;">
+                                        <el-option label="一年级" value="一年级"></el-option>
+                                        <el-option label="二年级" value="二年级"></el-option>
+                                        <el-option label="三年级" value="三年级"></el-option>
+                                        <el-option label="四年级" value="四年级"></el-option>
+                                        <el-option label="五年级" value="五年级"></el-option>
+                                        <el-option label="六年级" value="六年级"></el-option>
+                                        <el-option label="七年级" value="七年级"></el-option>
+                                        <el-option label="八年级" value="八年级"></el-option>
+                                        <el-option label="九年级" value="九年级"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="24">
+                                <el-form-item label="知识点范围" prop="knowledgePoints">
+                                    <el-input v-model="aiForm.knowledgePoints" type="textarea" :rows="2" 
+                                        placeholder="请输入知识点，多个知识点用逗号分隔，例如：加法运算、减法运算、进位与退位"></el-input>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="题型" prop="questionType">
+                                    <el-select v-model="aiForm.questionType" style="width: 100%;">
+                                        <el-option label="单选题" value="single_choice"></el-option>
+                                        <el-option label="多选题" value="multiple_choice"></el-option>
+                                        <el-option label="填空题" value="fill_blank"></el-option>
+                                        <el-option label="解答题" value="essay"></el-option>
+                                        <el-option label="判断题" value="judge"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="12">
+                                <el-form-item label="生成数量" prop="count">
+                                    <el-input-number v-model="aiForm.count" :min="1" :max="10" style="width: 100%;"></el-input-number>
+                                    <span class="form-tip">AI将自动评估每道题的难度</span>
+                                </el-form-item>
+                            </el-col>
+                        </el-row>
+                    </el-form>
+                    
+                    <div slot="footer" class="dialog-footer">
+                        <el-button @click="aiDialogVisible = false">取消</el-button>
+                        <el-button type="primary" @click="handleAIGenerate" :loading="aiGenerating">
+                            <i class="el-icon-magic-stick"></i> 开始生成
+                        </el-button>
+                    </div>
+                </el-dialog>
+
+                <!-- AI生成结果预览对话框 -->
+                <el-dialog title="AI生成结果预览" :visible.sync="aiResultDialogVisible" width="90%" :close-on-click-modal="false">
+                    <div v-if="aiGeneratedQuestions.length > 0">
+                        <el-alert title="提示" type="info" :closable="false" style="margin-bottom: 20px;">
+                            AI已生成 {{ aiGeneratedQuestions.length }} 道题目，请仔细检查后选择需要保存的题目
+                        </el-alert>
+                        
+                        <el-table :data="aiGeneratedQuestions" border style="width: 100%;" max-height="500">
+                            <el-table-column type="selection" width="55" align="center"></el-table-column>
+                            <el-table-column type="index" label="序号" width="60" align="center"></el-table-column>
+                            <el-table-column prop="content" label="题目内容" min-width="200" show-overflow-tooltip></el-table-column>
+                            <el-table-column label="选项" min-width="180">
+                                <template slot-scope="scope">
+                                    <div v-if="scope.row.optionA" style="font-size: 12px;">A: {{ scope.row.optionA }}</div>
+                                    <div v-if="scope.row.optionB" style="font-size: 12px;">B: {{ scope.row.optionB }}</div>
+                                    <div v-if="scope.row.optionC" style="font-size: 12px;">C: {{ scope.row.optionC }}</div>
+                                    <div v-if="scope.row.optionD" style="font-size: 12px;">D: {{ scope.row.optionD }}</div>
+                                </template>
+                            </el-table-column>
+                            <el-table-column prop="correctAnswer" label="答案" width="80" align="center"></el-table-column>
+                            <el-table-column label="AI评估" width="120" align="center">
+                                <template slot-scope="scope">
+                                    <el-tag :type="getDifficultyLevelTagType(scope.row.difficultyLevel)" size="small">
+                                        {{ scope.row.difficultyLevel || '中等' }}
+                                    </el-tag>
+                                    <div style="font-size: 12px; color: #999; margin-top: 4px;">
+                                        系数: {{ scope.row.difficultyScore || '0.5' }}
+                                    </div>
+                                </template>
+                            </el-table-column>
+                            <!-- <el-table-column label="知识点" width="150" show-overflow-tooltip v-show="false">
+                                <template slot-scope="scope">
+                                    <el-tag v-for="(kp, idx) in (scope.row.knowledgePoints || [])" :key="idx" 
+                                        size="mini" type="success" style="margin: 2px;">
+                                        {{ kp }}
+                                    </el-tag>
+                                </template>
+                            </el-table-column> -->
+                            <el-table-column label="操作" width="180" align="center" fixed="right">
+                                <template slot-scope="scope">
+                                    <el-button size="mini" type="text" @click="handleViewAIDetail(scope.row)" v-show="false">
+                                        <i class="el-icon-view"></i> 详情
+                                    </el-button>
+                                    <el-button size="mini" type="primary" @click="handleEditAIQuestion(scope.$index)">编辑</el-button>
+                                    <el-button size="mini" type="danger" @click="handleRemoveAIQuestion(scope.$index)">移除</el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                    </div>
+                    
+                    <div slot="footer" class="dialog-footer">
+                        <el-button @click="aiResultDialogVisible = false">取消</el-button>
+                        <el-button type="primary" @click="handleBatchSaveAI" :loading="batchSaving">
+                            <i class="el-icon-check"></i> 保存全部
+                        </el-button>
+                    </div>
+                </el-dialog>
+
+                <!-- AI分析结果对话框 -->
+                <el-dialog :title="aiAnalysisTitle" :visible.sync="aiAnalysisDialogVisible" width="60%">
+                    <div v-if="aiAnalysisType === 'difficulty'" style="padding: 20px;">
+                        <el-descriptions title="难度评估结果" :column="2" border>
+                            <el-descriptions-item label="难度系数">
+                                <el-tag :type="getDifficultyTagType(aiAnalysisData.difficulty)">
+                                    {{ aiAnalysisData.difficulty }}
+                                </el-tag>
+                            </el-descriptions-item>
+                            <el-descriptions-item label="难度等级">
+                                <el-tag :type="getDifficultyLevelTagType(aiAnalysisData.level)">
+                                    {{ aiAnalysisData.level }}
+                                </el-tag>
+                            </el-descriptions-item>
+                        </el-descriptions>
+                        <el-divider></el-divider>
+                        <h4>详细分析：</h4>
+                        <p style="line-height: 1.8; white-space: pre-wrap;">{{ aiAnalysisData.analysis }}</p>
+                    </div>
+                    
+                    <div v-if="aiAnalysisType === 'knowledge'" style="padding: 20px;">
+                        <h4>涉及的知识点：</h4>
+                        <el-tag v-for="(kp, index) in aiAnalysisData.knowledge_points" :key="index" 
+                            type="success" style="margin: 5px;">
+                            {{ kp }}
+                        </el-tag>
+                        <el-divider></el-divider>
+                        <h4>详细分析：</h4>
+                        <p style="line-height: 1.8; white-space: pre-wrap;">{{ aiAnalysisData.analysis }}</p>
+                    </div>
+                    
+                    <div slot="footer" class="dialog-footer">
+                        <el-button type="primary" @click="aiAnalysisDialogVisible = false">确定</el-button>
+                    </div>
+                </el-dialog>
+            </template>
+        </admin-layout>
+    </div>
+
+    <script src="/static/js/vue.js"></script>
+    <script src="/static/js/element-ui.min.js"></script>
+    <script src="/static/js/axios.min.js"></script>
+    <script src="/static/js/config/layout-config.js"></script>
+    <script src="/static/js/components/layout.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    activeMenu: 'question',
+                    loading: false,
+                    submitLoading: false,
+                    uploadUrl: '/open/upload',
+                    dialogVisible: false,
+                    dialogTitle: '新增题目',
+                    isEdit: false,
+                    tableData: [],
+                    knowledgeList: [],
+                    // AI智能命题相关
+                    aiDialogVisible: false,
+                    aiResultDialogVisible: false,
+                    aiAnalysisDialogVisible: false,
+                    aiGenerating: false,
+                    batchSaving: false,
+                    aiGeneratedQuestions: [],
+                    aiAnalysisType: '',
+                    aiAnalysisTitle: '',
+                    aiAnalysisData: {},
+                    aiForm: {
+                        subject: '数学',
+                        grade: '一年级',
+                        knowledgePoints: '',
+                        questionType: 'single_choice',
+                        count: 3
+                    },
+                    aiFormRules: {
+                        subject: [{ required: true, message: '请选择学科', trigger: 'change' }],
+                        grade: [{ required: true, message: '请选择年级', trigger: 'change' }],
+                        knowledgePoints: [{ required: true, message: '请输入知识点范围', trigger: 'blur' }],
+                        questionType: [{ required: true, message: '请选择题型', trigger: 'change' }],
+                        count: [{ required: true, message: '请输入生成数量', trigger: 'blur' }]
+                    },
+                    searchForm: {
+                        keyword: '',
+                        questionType: '',
+                        status: '',
+                        subject: '',
+                        grade: ''
+                    },
+                    pagination: {
+                        pageNum: 1,
+                        pageSize: 10,
+                        total: 0
+                    },
+                    formData: {
+                        id: null,
+                        content: '',
+                        questionType: '',
+                        optionA: '',
+                        optionB: '',
+                        optionC: '',
+                        optionD: '',
+                        score: '10',
+                        imageUrl: '',
+                        correctAnswer: '',
+                        analysis: '',
+                        subject: '',
+                        grade: '',
+                        knowledgeId: null,
+                        category: '',
+                        status: 'enabled'
+                    },
+                    formRules: {
+                        content: [
+                            { required: true, message: '请输入题目内容', trigger: 'blur' }
+                        ],
+                        questionType: [
+                            { required: true, message: '请选择题型', trigger: 'change' }
+                        ],
+                        correctAnswer: [
+                            { required: true, message: '请输入正确答案', trigger: 'blur' }
+                        ],
+                        score: [
+                            { required: true, message: '请输入分值', trigger: 'blur' }
+                        ]
+                    }
+                }
+            },
+            computed: {
+                showOptions() {
+                    return ['single_choice', 'multiple_choice', 'judge'].includes(this.formData.questionType);
+                },
+                showOptionC() {
+                    return ['single_choice', 'multiple_choice'].includes(this.formData.questionType);
+                }
+            },
+            mounted() {
+                this.loadData();
+                this.loadKnowledgeList();
+            },
+            methods: {
+                loadData() {
+                    this.loading = true;
+                    const params = {
+                        pageNum: this.pagination.pageNum,
+                        pageSize: this.pagination.pageSize,
+                        keyword: this.searchForm.keyword,
+                        status: this.searchForm.status,
+                        questionType: this.searchForm.questionType,
+                        subject: this.searchForm.subject,
+                        grade: this.searchForm.grade
+                    };
+                    axios.get('/api/question/admin/list', { params })
+                        .then(res => {
+                            if (res.data.code === 200) {
+                                this.tableData = res.data.data.rows;
+                                this.pagination.total = res.data.data.total;
+                            } else {
+                                this.$message.error(res.data.message || '加载失败');
+                            }
+                        })
+                        .catch(() => this.$message.error('加载失败'))
+                        .finally(() => this.loading = false);
+                },
+                loadKnowledgeList() {
+                    axios.get('/api/knowledge/admin/list', { params: { pageNum: 1, pageSize: 1000 } })
+                        .then(res => {
+                            if (res.data.code === 200) {
+                                this.knowledgeList = res.data.data.rows || [];
+                            }
+                        })
+                        .catch(() => {});
+                },
+                handleSearch() {
+                    this.pagination.pageNum = 1;
+                    this.loadData();
+                },
+                handleReset() {
+                    this.searchForm = { keyword: '', questionType: '', status: '', subject: '', grade: '' };
+                    this.pagination.pageNum = 1;
+                    this.loadData();
+                },
+                handleSizeChange(val) {
+                    this.pagination.pageSize = val;
+                    this.pagination.pageNum = 1;
+                    this.loadData();
+                },
+                handleCurrentChange(val) {
+                    this.pagination.pageNum = val;
+                    this.loadData();
+                },
+                showCreateDialog() {
+                    this.dialogTitle = '新增题目';
+                    this.isEdit = false;
+                    this.formData = {
+                        id: null,
+                        content: '',
+                        questionType: '',
+                        optionA: '',
+                        optionB: '',
+                        optionC: '',
+                        optionD: '',
+                        score: '10',
+                        imageUrl: '',
+                        correctAnswer: '',
+                        analysis: '',
+                        subject: '',
+                        grade: '',
+                        knowledgeId: null,
+                        category: '',
+                        status: 'enabled'
+                    };
+                    this.dialogVisible = true;
+                    this.$nextTick(() => this.$refs.formRef && this.$refs.formRef.clearValidate());
+                },
+                handleEdit(row) {
+                    this.dialogTitle = '编辑题目';
+                    this.isEdit = true;
+                    this.formData = {
+                        id: row.id,
+                        content: row.content || '',
+                        questionType: row.questionType || '',
+                        optionA: row.optionA || '',
+                        optionB: row.optionB || '',
+                        optionC: row.optionC || '',
+                        optionD: row.optionD || '',
+                        score: row.score || '10',
+                        imageUrl: row.imageUrl || '',
+                        correctAnswer: row.correctAnswer || '',
+                        analysis: row.analysis || '',
+                        subject: row.subject || '',
+                        grade: row.grade || '',
+                        knowledgeId: row.knowledgeId || null,
+                        category: row.category || '',
+                        status: row.status || 'enabled'
+                    };
+                    this.dialogVisible = true;
+                    this.$nextTick(() => this.$refs.formRef && this.$refs.formRef.clearValidate());
+                },
+                handleQuestionTypeChange() {
+                    // 切换题型时，清空选项（除了判断题保留A、B）
+                    if (this.formData.questionType === 'judge') {
+                        this.formData.optionC = '';
+                        this.formData.optionD = '';
+                    } else if (['fill_blank', 'essay'].includes(this.formData.questionType)) {
+                        this.formData.optionA = '';
+                        this.formData.optionB = '';
+                        this.formData.optionC = '';
+                        this.formData.optionD = '';
+                    }
+                },
+                getQuestionTypeName(type) {
+                    const map = {
+                        'single_choice': '单选题',
+                        'multiple_choice': '多选题',
+                        'fill_blank': '填空题',
+                        'essay': '解答题',
+                        'judge': '判断题'
+                    };
+                    return map[type] || type;
+                },
+                getCorrectAnswerPlaceholder() {
+                    if (this.formData.questionType === 'multiple_choice') {
+                        return '多个答案用逗号分隔，如：A,B';
+                    } else if (this.formData.questionType === 'judge') {
+                        return '输入A或B';
+                    } else if (['fill_blank', 'essay'].includes(this.formData.questionType)) {
+                        return '请输入正确答案';
+                    } else {
+                        return '输入A、B、C或D';
+                    }
+                },
+                getCorrectAnswerTip() {
+                    if (this.formData.questionType === 'multiple_choice') {
+                        return '多选题：多个答案用逗号分隔，如 A,B 或 A,B,C';
+                    } else if (this.formData.questionType === 'judge') {
+                        return '判断题：输入 A（正确）或 B（错误）';
+                    } else if (['fill_blank', 'essay'].includes(this.formData.questionType)) {
+                        return '填空题/解答题：直接输入答案内容';
+                    } else {
+                        return '单选题：输入 A、B、C 或 D';
+                    }
+                },
+                handleSubmit() {
+                    if (!this.$refs.formRef) return;
+                    this.$refs.formRef.validate(valid => {
+                        if (!valid) return;
+                        
+                        // 验证选项
+                        if (this.showOptions && (!this.formData.optionA || !this.formData.optionB)) {
+                            this.$message.warning('选择题和判断题必须填写选项A和选项B');
+                            return;
+                        }
+                        
+                        this.submitLoading = true;
+                        const url = this.isEdit ? '/api/question/admin/update' : '/api/question/admin/create';
+                        axios.post(url, this.formData)
+                            .then(res => {
+                                if (res.data.code === 200) {
+                                    this.$message.success(res.data.message);
+                                    this.dialogVisible = false;
+                                    this.loadData();
+                                } else {
+                                    this.$message.error(res.data.message || '提交失败');
+                                }
+                            })
+                            .catch(() => this.$message.error('提交失败'))
+                            .finally(() => this.submitLoading = false);
+                    });
+                },
+                handleToggleStatus(row) {
+                    const text = row.status === 'enabled' ? '禁用' : '启用';
+                    this.$confirm(`确定要${text}该题目吗？`, '提示', { type: 'warning' })
+                        .then(() => {
+                            axios.get('/api/question/admin/toggle-status', { params: { id: row.id } })
+                                .then(res => {
+                                    if (res.data.code === 200) {
+                                        this.$message.success(res.data.message);
+                                        this.loadData();
+                                    } else {
+                                        this.$message.error(res.data.message || '操作失败');
+                                    }
+                                })
+                                .catch(() => this.$message.error('操作失败'));
+                        });
+                },
+                handleDelete(row) {
+                    this.$confirm('确定要删除该题目吗？删除后不可恢复！', '警告', { type: 'error' })
+                        .then(() => {
+                            axios.get('/api/question/admin/delete', { params: { id: row.id } })
+                                .then(res => {
+                                    if (res.data.code === 200) {
+                                        this.$message.success(res.data.message);
+                                        this.loadData();
+                                    } else {
+                                        this.$message.error(res.data.message || '删除失败');
+                                    }
+                                })
+                                .catch(() => this.$message.error('删除失败'));
+                        });
+                },
+                handleImageSuccess(response) {
+                    if (response && response.code === 200) {
+                        const url = (response.data && (response.data.url || response.data.path)) || response.url || response.data;
+                        if (url) {
+                            this.formData.imageUrl = url;
+                            this.$message.success('图片上传成功');
+                        } else {
+                            this.$message.error('返回数据缺少文件地址');
+                        }
+                    } else {
+                        this.$message.error((response && response.message) || '图片上传失败');
+                    }
+                },
+                beforeImageUpload(file) {
+                    const isJpgOrPng = file.type === 'image/jpeg' || file.type === 'image/png';
+                    const isLt2M = file.size / 1024 / 1024 < 2;
+                    if (!isJpgOrPng) {
+                        this.$message.error('仅支持 JPG/PNG 格式图片');
+                        return false;
+                    }
+                    if (!isLt2M) {
+                        this.$message.error('图片大小不能超过 2MB');
+                        return false;
+                    }
+                    return true;
+                },
+                // AI智能命题相关方法
+                showAIDialog() {
+                    this.aiForm = {
+                        subject: '数学',
+                        grade: '一年级',
+                        knowledgePoints: '',
+                        questionType: 'single_choice',
+                        count: 3
+                    };
+                    this.aiDialogVisible = true;
+                    this.$nextTick(() => this.$refs.aiFormRef && this.$refs.aiFormRef.clearValidate());
+                },
+                handleViewAIDetail(question) {
+                    // 查看AI生成题目的详细信息
+                    const knowledgePointsText = (question.knowledgePoints || []).join('、');
+                    const detailHtml = `
+                        <div style="text-align: left; line-height: 1.8;">
+                            <h4>题目内容：</h4>
+                            <p>${question.content}</p>
+                            
+                            ${question.optionA ? `<h4>选项：</h4>
+                            <p>A: ${question.optionA}</p>
+                            <p>B: ${question.optionB}</p>
+                            ${question.optionC ? '<p>C: ' + question.optionC + '</p>' : ''}
+                            ${question.optionD ? '<p>D: ' + question.optionD + '</p>' : ''}` : ''}
+                            
+                            <h4>正确答案：</h4>
+                            <p>${question.correctAnswer}</p>
+                            
+                            <h4>题目解析：</h4>
+                            <p>${question.analysis}</p>
+                            
+                            <h4>AI难度评估：</h4>
+                            <p>难度等级：<el-tag type="${this.getDifficultyLevelTagType(question.difficultyLevel)}">${question.difficultyLevel || '中等'}</el-tag></p>
+                            <p>难度系数：${question.difficultyScore || '0.5'}</p>
+                            <p>${question.difficultyAnalysis || '暂无难度分析'}</p>
+                            
+                            <h4>涉及知识点：</h4>
+                            <p>${knowledgePointsText || '暂无知识点分析'}</p>
+                        </div>
+                    `;
+                    
+                    this.$alert(detailHtml, '题目详情', {
+                        dangerouslyUseHTMLString: true,
+                        confirmButtonText: '关闭',
+                        customClass: 'ai-detail-dialog'
+                    });
+                },
+                handleAIGenerate() {
+                    if (!this.$refs.aiFormRef) return;
+                    this.$refs.aiFormRef.validate(valid => {
+                        if (!valid) return;
+                        
+                        this.aiGenerating = true;
+                        axios.post('/api/question/admin/ai/generate', this.aiForm)
+                            .then(res => {
+                                if (res.data.code === 200) {
+                                    this.aiGeneratedQuestions = res.data.data || [];
+                                    this.$message.success(res.data.message);
+                                    this.aiDialogVisible = false;
+                                    this.aiResultDialogVisible = true;
+                                } else {
+                                    this.$message.error(res.data.message || 'AI生成失败');
+                                }
+                            })
+                            .catch(err => {
+                                console.error('AI生成失败:', err);
+                                this.$message.error('AI生成失败，请检查网络连接或稍后重试');
+                            })
+                            .finally(() => this.aiGenerating = false);
+                    });
+                },
+                handleEditAIQuestion(index) {
+                    const question = this.aiGeneratedQuestions[index];
+                    this.dialogTitle = '编辑AI生成的题目';
+                    this.isEdit = false;
+                    this.formData = {
+                        id: null,
+                        content: question.content || '',
+                        questionType: question.questionType || '',
+                        optionA: question.optionA || '',
+                        optionB: question.optionB || '',
+                        optionC: question.optionC || '',
+                        optionD: question.optionD || '',
+                        score: '10',
+                        imageUrl: '',
+                        correctAnswer: question.correctAnswer || '',
+                        analysis: question.analysis || '',
+                        subject: question.subject || '',
+                        grade: question.grade || '',
+                        knowledgeId: null,
+                        category: '',
+                        status: 'enabled'
+                    };
+                    this.dialogVisible = true;
+                    this.$nextTick(() => this.$refs.formRef && this.$refs.formRef.clearValidate());
+                },
+                handleRemoveAIQuestion(index) {
+                    this.$confirm('确定要移除这道题目吗？', '提示', { type: 'warning' })
+                        .then(() => {
+                            this.aiGeneratedQuestions.splice(index, 1);
+                            this.$message.success('已移除');
+                        });
+                },
+                handleBatchSaveAI() {
+                    if (this.aiGeneratedQuestions.length === 0) {
+                        this.$message.warning('没有可保存的题目');
+                        return;
+                    }
+                    
+                    this.$confirm(`确定要保存这 ${this.aiGeneratedQuestions.length} 道题目吗？`, '提示', { type: 'info' })
+                        .then(() => {
+                            this.batchSaving = true;
+                            axios.post('/api/question/admin/ai/batch-save', {
+                                questions: this.aiGeneratedQuestions
+                            })
+                                .then(res => {
+                                    if (res.data.code === 200) {
+                                        this.$message.success(res.data.message);
+                                        this.aiResultDialogVisible = false;
+                                        this.aiGeneratedQuestions = [];
+                                        this.loadData();
+                                    } else {
+                                        this.$message.error(res.data.message || '保存失败');
+                                    }
+                                })
+                                .catch(() => this.$message.error('保存失败'))
+                                .finally(() => this.batchSaving = false);
+                        });
+                },
+                handleAICommand(command, row) {
+                    if (command === 'difficulty') {
+                        this.handleAIEvaluateDifficulty(row);
+                    } else if (command === 'knowledge') {
+                        this.handleAIAnalyzeKnowledge(row);
+                    }
+                },
+                handleAIEvaluateDifficulty(row) {
+                    const loading = this.$loading({
+                        lock: true,
+                        text: 'AI正在评估难度...',
+                        spinner: 'el-icon-loading',
+                        background: 'rgba(0, 0, 0, 0.7)'
+                    });
+                    
+                    axios.get('/api/question/admin/ai/evaluate-difficulty', { params: { id: row.id } })
+                        .then(res => {
+                            if (res.data.code === 200) {
+                                this.aiAnalysisType = 'difficulty';
+                                this.aiAnalysisTitle = '难度评估结果';
+                                this.aiAnalysisData = res.data.data || {};
+                                this.aiAnalysisDialogVisible = true;
+                            } else {
+                                this.$message.error(res.data.message || 'AI评估失败');
+                            }
+                        })
+                        .catch(err => {
+                            console.error('AI评估失败:', err);
+                            this.$message.error('AI评估失败，请稍后重试');
+                        })
+                        .finally(() => loading.close());
+                },
+                handleAIAnalyzeKnowledge(row) {
+                    const loading = this.$loading({
+                        lock: true,
+                        text: 'AI正在分析知识点...',
+                        spinner: 'el-icon-loading',
+                        background: 'rgba(0, 0, 0, 0.7)'
+                    });
+                    
+                    axios.get('/api/question/admin/ai/analyze-knowledge', { params: { id: row.id } })
+                        .then(res => {
+                            if (res.data.code === 200) {
+                                this.aiAnalysisType = 'knowledge';
+                                this.aiAnalysisTitle = '知识点分析结果';
+                                this.aiAnalysisData = res.data.data || {};
+                                this.aiAnalysisDialogVisible = true;
+                            } else {
+                                this.$message.error(res.data.message || 'AI分析失败');
+                            }
+                        })
+                        .catch(err => {
+                            console.error('AI分析失败:', err);
+                            this.$message.error('AI分析失败，请稍后重试');
+                        })
+                        .finally(() => loading.close());
+                },
+                getDifficultyTagType(difficulty) {
+                    if (difficulty < 0.3) return 'success';
+                    if (difficulty < 0.7) return 'warning';
+                    return 'danger';
+                },
+                getDifficultyLevelTagType(level) {
+                    if (level === '简单') return 'success';
+                    if (level === '中等') return 'warning';
+                    return 'danger';
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+

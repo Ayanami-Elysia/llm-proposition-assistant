@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>考试统计 - 后台考试系统</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+    <link rel="stylesheet" href="/static/css/admin.css">
+    <style>
+        .page-container { padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1); }
+        .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e6e6e6; }
+        .page-header h2 { margin: 0; color: #333; font-size: 24px; font-weight: 600; }
+        .filter-bar { margin-bottom: 20px; }
+        .stats-row { margin-bottom: 20px; }
+        .stat-card { margin-bottom: 20px; }
+        .stat-content { display: flex; align-items: center; }
+        .stat-icon { font-size: 48px; margin-right: 20px; }
+        .stat-info h3 { margin: 0; font-size: 32px; font-weight: bold; color: #333; }
+        .stat-info p { margin: 5px 0 0 0; color: #666; font-size: 14px; }
+        .charts-row { margin-top: 20px; }
+        .chart-card { margin-bottom: 20px; }
+        .card-header { display: flex; justify-content: space-between; align-items: center; }
+        .chart-container { height: 400px; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <admin-layout :active-menu="activeMenu">
+            <template #content>
+                <div class="page-container">
+                    <div class="page-header">
+                        <h2>考试统计分析</h2>
+                        <div class="page-actions">
+                            <el-button type="primary" @click="refreshAll">
+                                <i class="el-icon-refresh"></i> 刷新数据
+                            </el-button>
+                        </div>
+                    </div>
+
+                    <el-card class="filter-bar" v-if="isDoctor">
+                        <el-form :inline="true">
+                            <el-form-item label="当前班级">
+                                <el-input :value="currentUser.class_name || '未绑定班级'" disabled></el-input>
+                            </el-form-item>
+                            <el-form-item label="考试">
+                                <el-select
+                                    v-model="selectedPaperId"
+                                    placeholder="请选择考试"
+                                    clearable
+                                    style="width: 280px;"
+                                    @change="handleExamChange">
+                                    <el-option
+                                        v-for="item in examOptions"
+                                        :key="item.paperId"
+                                        :label="`${item.paperName}（${item.examCount}份）`"
+                                        :value="item.paperId">
+                                    </el-option>
+                                </el-select>
+                            </el-form-item>
+                        </el-form>
+                    </el-card>
+
+                    <el-card class="filter-bar" v-if="isAdmin">
+                        <el-form :inline="true">
+                            <el-form-item label="学科">
+                                <el-select
+                                    v-model="selectedSubject"
+                                    placeholder="请选择学科"
+                                    clearable
+                                    style="width: 220px;"
+                                    @change="handleAdminFilterChange">
+                                    <el-option
+                                        v-for="item in subjectOptions"
+                                        :key="item"
+                                        :label="item"
+                                        :value="item">
+                                    </el-option>
+                                </el-select>
+                            </el-form-item>
+                        </el-form>
+                    </el-card>
+
+                    <el-row :gutter="20" class="stats-row">
+                        <el-col :xs="24" :sm="12" :md="6" v-for="stat in stats" :key="stat.key">
+                            <el-card class="stat-card">
+                                <div class="stat-content">
+                                    <div class="stat-icon" :style="{ color: stat.color }">
+                                        <i :class="stat.icon"></i>
+                                    </div>
+                                    <div class="stat-info">
+                                        <h3>{{ stat.value }}</h3>
+                                        <p>{{ stat.label }}</p>
+                                    </div>
+                                </div>
+                            </el-card>
+                        </el-col>
+                    </el-row>
+
+                    <el-row :gutter="20" class="charts-row">
+                        <el-col :xs="24" :lg="12">
+                            <el-card class="chart-card">
+                                <div slot="header" class="card-header">
+                                    <span>考试记录趋势</span>
+                                    <el-button type="text" @click="refreshExamTrend">
+                                        <i class="el-icon-refresh"></i> 刷新
+                                    </el-button>
+                                </div>
+                                <div id="examTrendChart" class="chart-container" v-loading="trendLoading"></div>
+                            </el-card>
+                        </el-col>
+
+                        <el-col :xs="24" :lg="12">
+                            <el-card class="chart-card">
+                                <div slot="header" class="card-header">
+                                    <span>考试状态分布</span>
+                                    <el-button type="text" @click="refreshStatusDistribution">
+                                        <i class="el-icon-refresh"></i> 刷新
+                                    </el-button>
+                                </div>
+                                <div id="statusDistributionChart" class="chart-container" v-loading="statusLoading"></div>
+                            </el-card>
+                        </el-col>
+
+                        <el-col :xs="24" :lg="12">
+                            <el-card class="chart-card">
+                                <div slot="header" class="card-header">
+                                    <span>分数分布统计</span>
+                                    <el-button type="text" @click="refreshScoreDistribution">
+                                        <i class="el-icon-refresh"></i> 刷新
+                                    </el-button>
+                                </div>
+                                <div id="scoreDistributionChart" class="chart-container" v-loading="scoreLoading"></div>
+                            </el-card>
+                        </el-col>
+
+                        <el-col :xs="24" :lg="12">
+                            <el-card class="chart-card">
+                                <div slot="header" class="card-header">
+                                    <span>{{ isAdmin ? '同学科不同老师教学情况' : '试卷使用情况（Top 10）' }}</span>
+                                    <el-button type="text" @click="refreshPaperUsage">
+                                        <i class="el-icon-refresh"></i> 刷新
+                                    </el-button>
+                                </div>
+                                <div id="paperUsageChart" class="chart-container" v-loading="paperLoading"></div>
+                            </el-card>
+                        </el-col>
+
+                        <el-col :xs="24" :lg="24">
+                            <el-card class="chart-card">
+                                <div slot="header" class="card-header">
+                                    <span>题型得分统计</span>
+                                    <el-button type="text" @click="refreshQuestionTypeStats">
+                                        <i class="el-icon-refresh"></i> 刷新
+                                    </el-button>
+                                </div>
+                                <div id="questionTypeChart" class="chart-container" v-loading="typeLoading" style="height: 350px;"></div>
+                            </el-card>
+                        </el-col>
+                    </el-row>
+                </div>
+            </template>
+        </admin-layout>
+    </div>
+
+    <script src="/static/js/vue.js"></script>
+    <script src="/static/js/element-ui.min.js"></script>
+    <script src="/static/js/echarts.min.js"></script>
+    <script src="/static/js/axios.min.js"></script>
+    <script src="/static/js/config/layout-config.js"></script>
+    <script src="/static/js/components/layout.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            data() {
+                return {
+                    activeMenu: 'exam_statistics',
+                    currentUser: {},
+                    selectedPaperId: null,
+                    selectedSubject: '',
+                    examOptions: [],
+                    subjectOptions: [],
+                    loading: false,
+                    trendLoading: false,
+                    statusLoading: false,
+                    scoreLoading: false,
+                    paperLoading: false,
+                    typeLoading: false,
+                    stats: [
+                        { key: 'total_exams', label: '总考试记录', value: 0, icon: 'el-icon-document', color: '#409eff' },
+                        { key: 'submitted_exams', label: '已提交', value: 0, icon: 'el-icon-check', color: '#67c23a' },
+                        { key: 'graded_exams', label: '已批阅', value: 0, icon: 'el-icon-edit', color: '#e6a23c' },
+                        { key: 'avg_score', label: '平均分', value: 0, icon: 'el-icon-star-on', color: '#f56c6c' }
+                    ],
+                    trendChart: null,
+                    statusChart: null,
+                    scoreChart: null,
+                    paperChart: null,
+                    typeChart: null
+                };
+            },
+            computed: {
+                isDoctor() {
+                    return this.currentUser.role === 'doctor';
+                },
+                isAdmin() {
+                    return this.currentUser.role === 'admin';
+                }
+            },
+            mounted() {
+                this.loadCurrentUser();
+                Promise.all([this.loadExamOptions(), this.loadSubjectOptions()]).then(() => {
+                    this.loadStatistics();
+                });
+                this.$nextTick(() => {
+                    this.initCharts();
+                });
+            },
+            beforeDestroy() {
+                if (this.trendChart) this.trendChart.dispose();
+                if (this.statusChart) this.statusChart.dispose();
+                if (this.scoreChart) this.scoreChart.dispose();
+                if (this.paperChart) this.paperChart.dispose();
+                if (this.typeChart) this.typeChart.dispose();
+            },
+            methods: {
+                getExamParams(extraParams = {}) {
+                    const params = { ...extraParams };
+                    if (this.isDoctor && this.selectedPaperId) {
+                        params.paperId = this.selectedPaperId;
+                    }
+                    if (this.isAdmin && this.selectedSubject) {
+                        params.subject = this.selectedSubject;
+                    }
+                    return params;
+                },
+                loadCurrentUser() {
+                    const userInfo = localStorage.getItem('userInfo') || sessionStorage.getItem('userInfo');
+                    if (userInfo) {
+                        this.currentUser = JSON.parse(userInfo);
+                    }
+                },
+                async loadExamOptions() {
+                    if (!this.isDoctor) {
+                        return;
+                    }
+                    try {
+                        const response = await axios.get('/api/dashboard/exam-options');
+                        if (response.data.code === 200) {
+                            this.examOptions = response.data.data || [];
+                            if (!this.selectedPaperId && this.examOptions.length > 0) {
+                                this.selectedPaperId = this.examOptions[0].paperId;
+                            }
+                        }
+                    } catch (error) {
+                        console.error('加载考试选项失败:', error);
+                    }
+                },
+                async loadSubjectOptions() {
+                    if (!this.isAdmin) {
+                        return;
+                    }
+                    try {
+                        const response = await axios.get('/api/dashboard/subject-options');
+                        if (response.data.code === 200) {
+                            this.subjectOptions = response.data.data || [];
+                        }
+                    } catch (error) {
+                        console.error('加载学科选项失败:', error);
+                    }
+                },
+                async loadStatistics() {
+                    try {
+                        const response = await axios.get('/api/dashboard/exam-statistics', {
+                            params: this.getExamParams()
+                        });
+                        if (response.data.code === 200) {
+                            const data = response.data.data;
+                            this.stats = [
+                                { key: 'total_exams', label: this.isAdmin && this.selectedSubject ? '本学科考试记录' : '总考试记录', value: data.total_exams || 0, icon: 'el-icon-document', color: '#409eff' },
+                                { key: 'submitted_exams', label: '已提交', value: data.submitted_exams || 0, icon: 'el-icon-check', color: '#67c23a' },
+                                { key: 'graded_exams', label: '已批阅', value: data.graded_exams || 0, icon: 'el-icon-edit', color: '#e6a23c' },
+                                {
+                                    key: 'avg_score',
+                                    label: this.isDoctor ? '本班本次考试平均分' : (this.isAdmin && this.selectedSubject ? '本学科平均分' : '平均分'),
+                                    value: data.avg_score || 0,
+                                    icon: 'el-icon-star-on',
+                                    color: '#f56c6c'
+                                }
+                            ];
+                        }
+                    } catch (error) {
+                        console.error('加载统计数据失败:', error);
+                        this.$message.error('加载统计数据失败');
+                    }
+                },
+                handleExamChange() {
+                    this.refreshAll();
+                },
+                handleAdminFilterChange() {
+                    this.refreshAll();
+                },
+                initCharts() {
+                    this.trendChart = echarts.init(document.getElementById('examTrendChart'));
+                    this.statusChart = echarts.init(document.getElementById('statusDistributionChart'));
+                    this.scoreChart = echarts.init(document.getElementById('scoreDistributionChart'));
+                    this.paperChart = echarts.init(document.getElementById('paperUsageChart'));
+                    this.typeChart = echarts.init(document.getElementById('questionTypeChart'));
+                    this.loadChartData();
+                },
+                async loadChartData() {
+                    await Promise.all([
+                        this.refreshExamTrend(),
+                        this.refreshStatusDistribution(),
+                        this.refreshScoreDistribution(),
+                        this.refreshPaperUsage(),
+                        this.refreshQuestionTypeStats()
+                    ]);
+                },
+                async refreshAll() {
+                    this.loading = true;
+                    await this.loadExamOptions();
+                    await this.loadSubjectOptions();
+                    await this.loadStatistics();
+                    await this.loadChartData();
+                    this.loading = false;
+                    this.$message.success('数据刷新成功');
+                },
+                async refreshExamTrend() {
+                    this.trendLoading = true;
+                    try {
+                        const response = await axios.get('/api/dashboard/exam-trend', {
+                            params: this.getExamParams({ days: 30 })
+                        });
+                        if (response.data.code === 200) {
+                            this.updateTrendChart(response.data.data);
+                        }
+                    } catch (error) {
+                        console.error('刷新考试趋势失败:', error);
+                        this.$message.error('刷新数据失败');
+                    } finally {
+                        this.trendLoading = false;
+                    }
+                },
+                async refreshStatusDistribution() {
+                    this.statusLoading = true;
+                    try {
+                        const response = await axios.get('/api/dashboard/exam-status-distribution', {
+                            params: this.getExamParams()
+                        });
+                        if (response.data.code === 200) {
+                            this.updateStatusChart(response.data.data);
+                        }
+                    } catch (error) {
+                        console.error('刷新状态分布失败:', error);
+                        this.$message.error('刷新数据失败');
+                    } finally {
+                        this.statusLoading = false;
+                    }
+                },
+                async refreshScoreDistribution() {
+                    this.scoreLoading = true;
+                    try {
+                        const response = await axios.get('/api/dashboard/score-distribution', {
+                            params: this.getExamParams()
+                        });
+                        if (response.data.code === 200) {
+                            this.updateScoreChart(response.data.data);
+                        }
+                    } catch (error) {
+                        console.error('刷新分数分布失败:', error);
+                        this.$message.error('刷新数据失败');
+                    } finally {
+                        this.scoreLoading = false;
+                    }
+                },
+                async refreshPaperUsage() {
+                    this.paperLoading = true;
+                    try {
+                        const url = this.isAdmin ? '/api/dashboard/teacher-teaching-stats' : '/api/dashboard/paper-usage';
+                        const response = await axios.get(url, {
+                            params: this.getExamParams()
+                        });
+                        if (response.data.code === 200) {
+                            this.updatePaperChart(response.data.data);
+                        }
+                    } catch (error) {
+                        console.error('刷新教师/试卷统计失败:', error);
+                        this.$message.error('刷新数据失败');
+                    } finally {
+                        this.paperLoading = false;
+                    }
+                },
+                async refreshQuestionTypeStats() {
+                    this.typeLoading = true;
+                    try {
+                        const response = await axios.get('/api/dashboard/question-type-statistics', {
+                            params: this.getExamParams()
+                        });
+                        if (response.data.code === 200) {
+                            this.updateQuestionTypeChart(response.data.data);
+                        }
+                    } catch (error) {
+                        console.error('刷新题型统计失败:', error);
+                        this.$message.error('刷新数据失败');
+                    } finally {
+                        this.typeLoading = false;
+                    }
+                },
+                updateTrendChart(data) {
+                    if (!this.trendChart) return;
+                    this.trendChart.setOption({
+                        tooltip: { trigger: 'axis' },
+                        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                        xAxis: { type: 'category', data: data.dates || [], axisLabel: { rotate: 45 } },
+                        yAxis: { type: 'value' },
+                        series: [{
+                            name: '考试记录数',
+                            data: data.data || [],
+                            type: 'line',
+                            smooth: true,
+                            symbol: 'circle',
+                            symbolSize: 6,
+                            lineStyle: { width: 3 },
+                            itemStyle: { color: '#409eff' }
+                        }]
+                    });
+                },
+                updateStatusChart(data) {
+                    if (!this.statusChart) return;
+                    this.statusChart.setOption({
+                        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                        legend: { orient: 'vertical', left: 'left' },
+                        series: [{
+                            name: '考试状态',
+                            type: 'pie',
+                            radius: ['40%', '70%'],
+                            center: ['60%', '50%'],
+                            data: data || []
+                        }]
+                    });
+                },
+                updateScoreChart(data) {
+                    if (!this.scoreChart) return;
+                    this.scoreChart.setOption({
+                        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                        legend: { orient: 'vertical', left: 'left' },
+                        series: [{
+                            name: '分数分布',
+                            type: 'pie',
+                            radius: '60%',
+                            center: ['50%', '50%'],
+                            data: data || []
+                        }]
+                    });
+                },
+                updatePaperChart(data) {
+                    if (!this.paperChart) return;
+                    if (this.isAdmin) {
+                        const teacherNames = (data || []).map(item => item.teacherName);
+                        const examCounts = (data || []).map(item => item.examCount);
+                        const avgScores = (data || []).map(item => item.avgScore);
+                        this.paperChart.setOption({
+                            tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                            legend: { data: ['考试次数', '平均分'] },
+                            grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
+                            xAxis: { type: 'category', data: teacherNames, axisLabel: { rotate: 30 } },
+                            yAxis: [
+                                { type: 'value', name: '考试次数' },
+                                { type: 'value', name: '平均分' }
+                            ],
+                            series: [
+                                { name: '考试次数', type: 'bar', data: examCounts, itemStyle: { color: '#409eff' } },
+                                { name: '平均分', type: 'line', yAxisIndex: 1, data: avgScores, itemStyle: { color: '#67c23a' } }
+                            ]
+                        });
+                        return;
+                    }
+
+                    const paperNames = (data || []).map(item => item.paperName);
+                    const examCounts = (data || []).map(item => item.examCount);
+                    const avgScores = (data || []).map(item => item.avgScore);
+                    this.paperChart.setOption({
+                        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                        legend: { data: ['考试次数', '平均分'] },
+                        grid: { left: '3%', right: '4%', bottom: '15%', containLabel: true },
+                        xAxis: { type: 'category', data: paperNames, axisLabel: { rotate: 45 } },
+                        yAxis: [
+                            { type: 'value', name: '考试次数' },
+                            { type: 'value', name: '平均分' }
+                        ],
+                        series: [
+                            { name: '考试次数', type: 'bar', data: examCounts, itemStyle: { color: '#409eff' } },
+                            { name: '平均分', type: 'line', yAxisIndex: 1, data: avgScores, itemStyle: { color: '#67c23a' } }
+                        ]
+                    });
+                },
+                updateQuestionTypeChart(data) {
+                    if (!this.typeChart) return;
+                    const types = (data || []).map(item => item.type);
+                    const accuracies = (data || []).map(item => item.accuracy);
+                    const avgScores = (data || []).map(item => item.avgScore);
+                    this.typeChart.setOption({
+                        tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                        legend: { data: ['正确率(%)', '平均分'] },
+                        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                        xAxis: { type: 'category', data: types },
+                        yAxis: [
+                            { type: 'value', name: '正确率(%)', min: 0, max: 100 },
+                            { type: 'value', name: '平均分' }
+                        ],
+                        series: [
+                            { name: '正确率(%)', type: 'bar', data: accuracies, itemStyle: { color: '#409eff' } },
+                            { name: '平均分', type: 'line', yAxisIndex: 1, data: avgScores, itemStyle: { color: '#67c23a' } }
+                        ]
+                    });
+                }
+            }
+        });
+    </script>
+</body>
+</html>
